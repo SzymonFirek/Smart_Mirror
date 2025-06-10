@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart Mirror</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>{{ time }}</h1>
+        <p>{{ date }}</p>
+
+        <div class="weather">
+            <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png">
+            <p>{{ weather.temp }}°C – {{ weather.desc }}</p>
+        </div>
+
+        <h3 style="text-align: center;">Prognoza na dziś:</h3>
+        <div class="forecast-container">
+            {% for item in forecast %}
+                <div class="forecast-item">
+                    <p><strong>{{ item.time }}</strong></p>
+                    <img src="https://openweathermap.org/img/wn/{{ item.icon }}@2x.png" alt="{{ item.desc }}">
+                    <p>{{ item.temp }}°C</p>
+                    <p>{{ item.desc }}</p>
+                </div>
+            {% endfor %}
+        </div>
+
+
+        <div class="calendar">
+            <h2>Wydarzenia</h2>
+            <ul>
+                {% for event in events %}
+                    <li>{{ event.time }} – {{ event.title }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

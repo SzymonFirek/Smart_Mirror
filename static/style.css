@@ -1,0 +1,28 @@
+body {
+    background-color: black;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding-top: 50px;
+}
+.weather img {
+    width: 60px;
+}
+
+.forecast-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    text-align: center;
+}
+.forecast-item {
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 10px;
+    border-radius: 10px;
+    min-width: 100px;
+}
+
+ul {
+    list-style-type: none;
+    padding: 0;
+}
