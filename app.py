@@ -1,4 +1,5 @@
 from flask import Flask, render_template
+from google_calendar import get_upcoming_events, get_google_tasks
 import datetime
 import requests
 import json
@@ -27,16 +28,13 @@ def load_users(json_path="users.json"):
     return users
 
 
-API_KEY = "d23796afecfbd9348704a408398583e1"
+weather_API_KEY = "d23796afecfbd9348704a408398583e1"
 LAT = 50.0647
 LON = 19.9450
-
-
-API_KEY = "d23796afecfbd9348704a408398583e1"
 CITY = "Kraków"
 
 def get_weather():
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={API_KEY}&units=metric&lang=pl"
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={weather_API_KEY}&units=metric&lang=pl"
     try:
         response = requests.get(url)
         data = response.json()
@@ -54,7 +52,7 @@ def get_weather():
 from datetime import datetime
 
 def get_weather_forecast():
-    url = f"http://api.openweathermap.org/data/2.5/forecast?q={CITY}&appid={API_KEY}&units=metric&lang=pl"
+    url = f"http://api.openweathermap.org/data/2.5/forecast?q={CITY}&appid={weather_API_KEY}&units=metric&lang=pl"
     try:
         response = requests.get(url)
         data = response.json()
@@ -84,18 +82,16 @@ def index():
     now = datetime.now()
     time = now.strftime("%H:%M")
     date = now.strftime("%A, %d %B %Y")
-
+    #pogoda
     weather = get_weather()
     forecast = get_weather_forecast()
-
-    events = [
-        {"time": "09:00", "title": "Spotkanie z zespołem"},
-        {"time": "12:30", "title": "Lunch"},
-        {"time": "15:00", "title": "Zakupy"}
-    ]
-
-    return render_template("index.html", time=time, date=date, weather=weather, forecast=forecast, events=events)
-
-
+    #kalendarz
+    today_events, future_events = get_upcoming_events()
+    tasks = get_google_tasks()
+    return render_template("index.html",
+                           time=time, date=date,
+                           weather=weather, forecast=forecast,
+                           today_events=today_events, future_events=future_events,
+                           tasks=tasks)
 if __name__ == "__main__":
     app.run(debug=True)
