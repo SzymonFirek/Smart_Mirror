@@ -1,7 +1,7 @@
 # mirror_user.py
 class MirrorUser:
     def __init__(self, user_id, name, calendar_type, email=None, face_encoding=None, calendar_data=None):
-        self.user_id = user_id
+        self.user_id = int(user_id)  # rzutuj na int jeśli nie jesteś pewien
         self.name = name
         self.calendar_type = calendar_type
         self.email = email

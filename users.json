@@ -4,7 +4,15 @@
     "name": "Szymon",
     "calendar_type": "google",
     "email": "szymonfirek7@gmail.com",
-    "calendar_data": "tokens/szymon.json",
+    "calendar_data": "tokens/token_1.pickle",
     "face_encoding_path": "encodings/szymon.npy"
+  },
+  {
+    "user_id": 2,
+    "name": "Justyna",
+    "calendar_type": "apple",
+    "email": "szymon-firek@wp.pl",
+    "calendar_data": "tokens/token_2.pickle",
+    "face_encoding_path": "encodings/user2.npy"
   }
 ]

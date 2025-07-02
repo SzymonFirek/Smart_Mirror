@@ -11,10 +11,20 @@ SCOPES = [
     'https://www.googleapis.com/auth/tasks.readonly'
 ]
 
-def get_credentials():
+def get_credentials(user_id=None):
+    """
+    Pobiera lub generuje token dla użytkownika.
+    Token jest zapisywany w pliku token_<user_id>.pickle.
+    Jeśli user_id nie podano, używa domyślnego token.pickle.
+    """
+    if user_id is not None:
+        token_path = f'token_{user_id}.pickle'
+    else:
+        token_path = 'token.pickle'
+
     creds = None
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
+    if os.path.exists(token_path):
+        with open(token_path, 'rb') as token:
             creds = pickle.load(token)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -23,13 +33,13 @@ def get_credentials():
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-        with open('token.pickle', 'wb') as token:
+        with open(token_path, 'wb') as token:
             pickle.dump(creds, token)
     return creds
 
 
-def get_upcoming_events():
-    creds = get_credentials()
+def get_upcoming_events(user_id=None):
+    creds = get_credentials(user_id)
     service = build('calendar', 'v3', credentials=creds)
 
     now = datetime.utcnow().isoformat() + 'Z'
@@ -94,8 +104,8 @@ def get_upcoming_events():
     return today_events, future_events
 
 
-def get_google_tasks():
-    creds = get_credentials()
+def get_google_tasks(user_id=None):
+    creds = get_credentials(user_id)
     service = build('tasks', 'v1', credentials=creds)
 
     tasklists = service.tasklists().list().execute().get('items', [])

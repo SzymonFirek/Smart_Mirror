@@ -26,46 +26,6 @@
                 </div>
             {% endfor %}
         </div>
-        <h2>Dzisiaj:</h2>
-        <ul>
-            {% for event in today_events %}
-                <li>
-                {% if event.time %}
-                    {{ event.time }} – {{ event.title }}
-                {% else %}
-                    {{ event.title }}
-                {% endif %}
-                </li>
-            {% else %}
-                <li>Brak wydarzeń na dziś</li>
-            {% endfor %}
-        </ul>
-
-    <h2>Przyszłe:</h2>
-    <ul>
-        {% for event in future_events %}
-            <li>
-                {{ event.date_str }}
-                {% if event.time %}
-                    {{ event.time }} –
-                {% endif %}
-                {{ event.title }}
-            </li>
-        {% else %}
-            <li>Brak nadchodzących wydarzeń</li>
-        {% endfor %}
-    </ul>
-
-    <h2>Zadania:</h2>
-    <ul>
-        {% for task in tasks %}
-            <li>{{ task.due }} – {{ task.title }}</li>
-        {% else %}
-            <li>Brak zadań</li>
-        {% endfor %}
-    </ul>
-
-        </div>
     </div>
 </body>
 </html>
