@@ -27,5 +27,26 @@
             {% endfor %}
         </div>
     </div>
+    <script>
+        let currentUserId = null;
+
+        async function checkUser() {
+            try {
+                const response = await fetch('/check_user');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (data.user_id !== currentUserId) {
+                currentUserId = data.user_id;
+                // Przekieruj lub odśwież stronę user
+                window.location.href = "/user";
+                }
+            } catch (e) {
+            console.error('Błąd podczas sprawdzania użytkownika:', e);
+            }
+        }
+        // Sprawdzaj co 1 sekundę
+        setInterval(checkUser, 1000);
+    </script>
 </body>
 </html>

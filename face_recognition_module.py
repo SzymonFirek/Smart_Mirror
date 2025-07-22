@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import face_recognition
 import time
+import threading
 
 def encode_face_image(image_path):
     """
@@ -66,6 +67,9 @@ class FaceRecognitionModule:
         self.RECOGNITION_TIMEOUT = 5  # sekundy
         self.TOLERANCE = 0.6
 
+        self.recognition_thread = None
+        self.running = False
+
         for user in known_users:
             user_dir = os.path.join(base_dir, user.name)
             encoding_path = os.path.join(user_dir, "encoding.npy")
@@ -80,13 +84,12 @@ class FaceRecognitionModule:
         if not self.camera.isOpened():
             raise RuntimeError("Nie udało się otworzyć kamery")
 
-    def recognize_user(self):
+    def _recognition_loop(self, callback):
+        self.running = True
         print("🔍 Rozpoczynam rozpoznawanie twarzy...")
 
         start_time = time.time()
-        recognized_user = None
-
-        while time.time() - start_time < self.RECOGNITION_TIMEOUT:
+        while self.running and time.time() - start_time < self.RECOGNITION_TIMEOUT:
             ret, frame = self.camera.read()
             if not ret:
                 print("[!] Nie udało się odczytać klatki z kamery.")
@@ -102,7 +105,6 @@ class FaceRecognitionModule:
                 print(" - Brak twarzy na obrazie.")
                 continue
 
-            # Sprawdź, ile twarzy
             print(f"🧠 Wykryto {len(face_locations)} twarzy.")
 
             try:
@@ -122,10 +124,27 @@ class FaceRecognitionModule:
                 if matches[best_index]:
                     recognized_user = self.known_ids[best_index]
                     print(f"✅ Rozpoznano użytkownika: {recognized_user}")
-                    return recognized_user
+                    callback(recognized_user)
+                    self.running = False
+                    self.release()
+                    return
 
         print("⏱️ Timeout – nie rozpoznano użytkownika.")
-        return None
+        self.release()
+
+    def start_recognition_thread(self, callback):
+        if self.recognition_thread and self.recognition_thread.is_alive():
+            print("[!] Wątek już działa")
+            return
+
+        self.recognition_thread = threading.Thread(target=self._recognition_loop, args=(callback,))
+        self.recognition_thread.start()
+
+    def stop_recognition(self):
+        self.running = False
+        if self.recognition_thread:
+            self.recognition_thread.join()
+        self.release()
 
     def release(self):
         """

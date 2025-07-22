@@ -11,7 +11,7 @@
         <p>{{ date }}</p>
 
         <div class="weather">
-            <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png">
+            <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="Pogoda">
             <p>{{ weather.temp }}°C – {{ weather.desc }}</p>
         </div>
 
@@ -26,6 +26,7 @@
                 </div>
             {% endfor %}
         </div>
+
         <h2>Dzisiaj:</h2>
         <ul>
             {% for event in today_events %}
@@ -41,31 +42,50 @@
             {% endfor %}
         </ul>
 
-    <h2>Przyszłe:</h2>
-    <ul>
-        {% for event in future_events %}
-            <li>
-                {{ event.date_str }}
-                {% if event.time %}
-                    {{ event.time }} –
-                {% endif %}
-                {{ event.title }}
-            </li>
-        {% else %}
-            <li>Brak nadchodzących wydarzeń</li>
-        {% endfor %}
-    </ul>
+        <h2>Przyszłe:</h2>
+        <ul>
+            {% for event in future_events %}
+                <li>
+                    {{ event.date_str }}
+                    {% if event.time %}
+                        {{ event.time }} –
+                    {% endif %}
+                    {{ event.title }}
+                </li>
+            {% else %}
+                <li>Brak nadchodzących wydarzeń</li>
+            {% endfor %}
+        </ul>
 
-    <h2>Zadania:</h2>
-    <ul>
-        {% for task in tasks %}
-            <li>{{ task.due }} – {{ task.title }}</li>
-        {% else %}
-            <li>Brak zadań</li>
-        {% endfor %}
-    </ul>
-
-        </div>
+        <h2>Zadania:</h2>
+        <ul>
+            {% for task in tasks %}
+                <li>{{ task.due }} – {{ task.title }}</li>
+            {% else %}
+                <li>Brak zadań</li>
+            {% endfor %}
+        </ul>
     </div>
+
+<script>
+let hotwordDetected = false;
+const interval = setInterval(() => {
+    if (hotwordDetected) return;
+
+    fetch('/check_hotword')
+        .then(response => response.json())
+        .then(data => {
+            console.log("Hotword check:", data);
+            if (data.detected === true) {
+                hotwordDetected = true;  // zapobiega kolejnym sprawdzeniom
+                clearInterval(interval); // opcjonalnie zatrzymuje całkowicie
+                window.location.href = '/user/asystent_chat';
+            }
+        })
+        .catch(error => {
+            console.error("Błąd fetch:", error);
+        });
+}, 1000);
+</script>
 </body>
 </html>

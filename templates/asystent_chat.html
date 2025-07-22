@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Asystent Głosowy</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #222;
+      color: #eee;
+      padding: 20px;
+    }
+    .chat-container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .bubble {
+      max-width: 70%;
+      padding: 12px 16px;
+      margin: 10px 0;
+      border-radius: 20px;
+      clear: both;
+    }
+    .bubble.user {
+      background: #4a90e2;
+      color: white;
+      float: right;
+      text-align: right;
+    }
+    .bubble.assistant {
+      background: #333;
+      color: #eee;
+      float: left;
+      text-align: left;
+    }
+    .bubble.system {
+      background: #666;
+      color: #ddd;
+      text-align: center;
+      max-width: 100%;
+      float: none;
+    }
+    #chat {
+      overflow-y: auto;
+      height: 400px;
+      border: 1px solid #444;
+      padding: 10px;
+      background: #111;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div id="chat">
+      <div class="bubble system">Zapytaj o coś asystenta.</div>
+    </div>
+  </div>
+
+  <script>
+    const chat = document.getElementById('chat');
+
+    function addBubble(text, sender) {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + sender;
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function chatSequence() {
+      addBubble('🎤 Rozpoznaję twoją wypowiedź...', 'system');
+      try {
+        const response = await fetch('/api/asystent_start');
+        const data = await response.json();
+
+        const userText = data.user_input?.trim();
+        const assistantText = data.ai_response?.trim();
+
+        if (userText) {
+          addBubble(userText, 'user');
+        } else {
+          addBubble('Nie udało się rozpoznać twojej wypowiedzi.', 'system');
+        }
+
+        if (assistantText) {
+          addBubble(assistantText, 'assistant');
+        } else {
+          addBubble('Asystent nie odpowiedział.', 'system');
+        }
+      } catch (err) {
+        console.error(err);
+        addBubble('❌ Błąd komunikacji z serwerem.', 'system');
+      }
+    }
+
+    // Uruchom sekwencję po krótkim opóźnieniu
+    setTimeout(chatSequence, 1000);
+  </script>
+</body>
+</html>
