@@ -275,4 +275,4 @@ def asystent_chat():
     return render_template("asystent_chat.html")  # JS sam dociąga dane przez AJAX
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", debug=True, use_reloader=False)

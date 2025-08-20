@@ -80,7 +80,7 @@ class FaceRecognitionModule:
             else:
                 print(f"Brak encodingu dla użytkownika {user.name} w {encoding_path}")
 
-        self.camera = cv2.VideoCapture(0)
+        self.camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
         if not self.camera.isOpened():
             raise RuntimeError("Nie udało się otworzyć kamery")
 
