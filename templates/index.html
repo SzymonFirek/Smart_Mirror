@@ -4,18 +4,42 @@
     <meta charset="UTF-8">
     <title>Smart Mirror</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/gesture_focus.js" defer></script>
 </head>
 <body>
     <div class="container">
         <h1>{{ time }}</h1>
         <p>{{ date }}</p>
 
-        <div class="weather">
-            <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png">
-            <p>{{ weather.temp }}°C – {{ weather.desc }}</p>
+        <div class="top-row">
+            <div class="weather">
+                <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="weather">
+                <div class="main">
+                    <div>{{ weather.temp }}°C</div>
+                    <div style="font-size:0.9rem; opacity:0.85;">{{ weather.desc }}</div>
+                </div>
+            </div>
+
+            <div class="weather">
+                <div class="main">
+                    {% set has_t = (temperatura is not none) %}
+                    {% set has_h = (wilgotnosc  is not none) %}
+                    {% set tval = (temperatura|round(1)) if has_t else '?' %}
+                    {% set hval = (wilgotnosc|round(0))  if has_h else '?' %}
+
+                    <div id="sensor-line" style="{{ '' if (has_t or has_h) else 'display:none' }}">
+                        <span id="temp-val">{{ tval }}</span>°C  /  <span id="hum-val">{{ hval }}</span>%
+                    </div>
+                    <div id="sensor-nodata" style="{{ 'display:none' if (has_t or has_h) else '' }}">
+                        Brak danych
+                    </div>
+
+                    <div style="font-size:0.9rem; opacity:0.85;">Zmierzona temperatura i wilgotność</div>
+                </div>
+            </div>
         </div>
 
-        <h3 style="text-align: center;">Prognoza na dziś:</h3>
+        <h3>Prognoza na dziś:</h3>
         <div class="forecast-container">
             {% for item in forecast %}
                 <div class="forecast-item">
@@ -26,27 +50,142 @@
                 </div>
             {% endfor %}
         </div>
+
+        <!-- Dół strony: komunikat + przycisk (obsługa strzałek/ENTER) -->
+        <div style="margin: 28px 0 8px; color: var(--muted);">
+            Nie rozpoznano użytkownika
+        </div>
+        <div class="toolbar" style="justify-content:center; margin-bottom: 12px;">
+            <button id="btn-refresh" data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
+        </div>
     </div>
+
     <script>
-        let currentUserId = null;
+        // --- Natychmiastowe przejście po rozpoznaniu (SSE) + fallback na polling ---
+        let redirected = false;
+
+        (function initSSE() {
+            try {
+                const es = new EventSource('/events');
+                es.onopen = () => console.log('[SSE] open');
+                es.onerror = (e) => console.warn('[SSE] error', e);
+                es.onmessage = (e) => {
+                    if (redirected) return;
+                    try {
+                        const msg = JSON.parse(e.data);
+                        if (msg.type === 'recognized' && msg.user_id) {
+                            redirected = true;
+                            window.location.href = '/user';
+                        }
+                    } catch {}
+                };
+            } catch (e) {
+                console.warn('SSE niedostępne, zostaje polling /check_user');
+            }
+        })();
 
         async function checkUser() {
+            if (redirected) return;
             try {
                 const response = await fetch('/check_user');
                 if (!response.ok) return;
                 const data = await response.json();
-
-                if (data.user_id !== currentUserId) {
-                currentUserId = data.user_id;
-                // Przekieruj lub odśwież stronę user
-                window.location.href = "/user";
+                if (data.recognized) {
+                    redirected = true;
+                    window.location.href = "/user";
                 }
             } catch (e) {
-            console.error('Błąd podczas sprawdzania użytkownika:', e);
+                console.error('Błąd podczas sprawdzania użytkownika:', e);
             }
         }
-        // Sprawdzaj co 1 sekundę
+        // fallback: sprawdzaj co 1s
         setInterval(checkUser, 1000);
+    </script>
+
+    <script>
+        // --- Auto-odświeżanie iNode (adaptacyjne: szybko do pierwszych danych, potem rzadziej) ---
+        let sensorsHaveData = false;
+        let sensorsTimer = null;
+
+        function scheduleSensorsPolling(ms) {
+            if (sensorsTimer) clearInterval(sensorsTimer);
+            sensorsTimer = setInterval(refreshSensors, ms);
+        }
+
+        async function refreshSensors() {
+            try {
+                const res = await fetch('/api/sensors', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                const t = data.t, h = data.h;
+
+                const line  = document.getElementById('sensor-line');
+                const nodata = document.getElementById('sensor-nodata');
+                const tEl = document.getElementById('temp-val');
+                const hEl = document.getElementById('hum-val');
+
+                const hasT = (t !== null && t !== undefined && !Number.isNaN(t));
+                const hasH = (h !== null && h !== undefined && !Number.isNaN(h));
+
+                if (hasT || hasH) {
+                    if (line)   line.style.display = '';
+                    if (nodata) nodata.style.display = 'none';
+                    if (tEl) tEl.textContent = hasT ? (Math.round(t * 10) / 10).toFixed(1) : '?';
+                    if (hEl) hEl.textContent = hasH ? Math.round(h).toString() : '?';
+
+                    if (!sensorsHaveData) {
+                        sensorsHaveData = true;
+                        scheduleSensorsPolling(30000); // co 30 s po pierwszym sukcesie
+                    }
+                } else {
+                    if (line)   line.style.display = 'none';
+                    if (nodata) nodata.style.display = '';
+                    if (sensorsHaveData) {
+                        sensorsHaveData = false;
+                        scheduleSensorsPolling(2000);
+                    }
+                }
+            } catch (e) {
+                console.error('Błąd /api/sensors:', e);
+            }
+        }
+        // start: natychmiast i co 2 s do pierwszych danych
+        refreshSensors();
+        scheduleSensorsPolling(2000);
+    </script>
+
+    <script>
+        // --- „Podtrzymanie” rozpoznawania twarzy na / (co 20 s) ---
+        async function ensureRecognition() {
+            try {
+                await fetch('/api/ensure_recognition', { method: 'POST' });
+            } catch (e) {
+                console.warn('ensure_recognition failed', e);
+            }
+        }
+        ensureRecognition();
+        setInterval(ensureRecognition, 20000);
+    </script>
+
+    <script>
+        // --- Wymuś aktywny focus na dolnym przycisku (jeśli biblioteka nie zdąży) ---
+        function forceInitialFocus() {
+            // jeśli nasz skrypt focusujący udostępnia setter — użyj
+            if (window.__GF_SET_ACTIVE instanceof Function) {
+                try { window.__GF_SET_ACTIVE(0); return; } catch {}
+            }
+            // awaryjnie: dołóż klasę i focus na pierwszym data-gfocus
+            const first = document.querySelector('[data-gfocus]');
+            if (first) {
+                first.classList.add('gfocus-active');
+                if (first.focus) first.focus();
+            }
+        }
+        // spróbuj po załadowaniu DOM i jeszcze chwile później
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(forceInitialFocus, 0);
+            setTimeout(forceInitialFocus, 150);
+        });
     </script>
 </body>
 </html>

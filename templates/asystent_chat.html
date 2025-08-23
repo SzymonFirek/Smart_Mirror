@@ -3,54 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <title>Asystent Głosowy</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/gesture_focus.js" defer></script>
   <style>
+    :root { --bg:#000; --text:#fff; }
     body {
+      margin: 0; background: var(--bg); color: var(--text);
       font-family: Arial, sans-serif;
-      background: #222;
-      color: #eee;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
       padding: 20px;
     }
-    .chat-container {
-      max-width: 600px;
-      margin: 0 auto;
+    .chat-container { width: min(100%, 860px); margin: 0 auto; }
+    #chat {
+      overflow-y: auto; height: calc(100vh - 180px);
+      border: 1px solid #333; border-radius: 12px;
+      padding: 14px; background: #0c0c0c;
     }
     .bubble {
-      max-width: 70%;
-      padding: 12px 16px;
-      margin: 10px 0;
-      border-radius: 20px;
-      clear: both;
+      position: relative; max-width: 78%;
+      padding: 14px 18px; margin: 12px 0; border-radius: 20px;
+      line-height: 1.45; font-size: 1rem; white-space: pre-wrap;
+      word-wrap: break-word; overflow-wrap: anywhere; clear: both;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.06);
     }
-    .bubble.user {
-      background: #4a90e2;
-      color: white;
-      float: right;
-      text-align: right;
-    }
-    .bubble.assistant {
-      background: #333;
-      color: #eee;
-      float: left;
-      text-align: left;
-    }
+    .bubble.user { background:#1a4f8c; color:#fff; float:right; text-align:left; }
+    .bubble.assistant { background:#222; color:#eee; float:left; text-align:left; }
     .bubble.system {
-      background: #666;
-      color: #ddd;
-      text-align: center;
-      max-width: 100%;
-      float: none;
+      background:#444; color:#eee; text-align:center; max-width:100%; float:none;
+      border: 1px dashed rgba(255,255,255,0.25);
     }
-    #chat {
-      overflow-y: auto;
-      height: 400px;
-      border: 1px solid #444;
-      padding: 10px;
-      background: #111;
-    }
+    .bubble p { margin: .25rem 0; }
+    .bubble p:first-child { margin-top: 0; }
+    .bubble p:last-child  { margin-bottom: 0; }
+
+    @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
   </style>
 </head>
 <body>
   <div class="chat-container">
+
+    <!-- Pasek nawigacji (strzałki/gesty + ENTER) -->
+    <div class="toolbar" style="margin-bottom:12px;">
+      <button data-gfocus data-genter="js:window.history.back()">⬅ Wstecz</button>
+      <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
+      <button id="btn-again" data-gfocus data-genter="js:chatSequence()">🎤 Nowe pytanie</button>
+    </div>
+
     <div id="chat">
       <div class="bubble system">Zapytaj o coś asystenta.</div>
     </div>
@@ -58,23 +57,31 @@
 
   <script>
     const chat = document.getElementById('chat');
+    let isBusy = false; // strażnik, by nie odpalać wielu zapytań naraz
 
     function addBubble(text, sender) {
       const div = document.createElement('div');
       div.className = 'bubble ' + sender;
-      div.textContent = text;
+      div.textContent = text || '';
       chat.appendChild(div);
       chat.scrollTop = chat.scrollHeight;
+      return div;
     }
 
     async function chatSequence() {
-      addBubble('🎤 Rozpoznaję twoją wypowiedź...', 'system');
+      if (isBusy) return;
+      isBusy = true;
+
+      const loading = addBubble('🎤 Rozpoznaję twoją wypowiedź...', 'system');
       try {
         const response = await fetch('/api/asystent_start');
         const data = await response.json();
 
-        const userText = data.user_input?.trim();
-        const assistantText = data.ai_response?.trim();
+        // usuń „loading”
+        if (loading && loading.parentNode) loading.parentNode.removeChild(loading);
+
+        const userText = (data.user_input || '').trim();
+        const assistantText = (data.ai_response || '').trim();
 
         if (userText) {
           addBubble(userText, 'user');
@@ -89,12 +96,33 @@
         }
       } catch (err) {
         console.error(err);
+        if (loading && loading.parentNode) loading.parentNode.removeChild(loading);
         addBubble('❌ Błąd komunikacji z serwerem.', 'system');
+      } finally {
+        isBusy = false;
       }
     }
+    // udostępnij dla data-genter="js:chatSequence()"
+    window.chatSequence = chatSequence;
 
-    // Uruchom sekwencję po krótkim opóźnieniu
+    // Auto-start po krótkim opóźnieniu
     setTimeout(chatSequence, 1000);
+
+    // Wymuś początkowy focus na pierwszym przycisku (dla strzałek/ENTER)
+    function forceInitialFocus() {
+      if (window.__GF_SET_ACTIVE instanceof Function) {
+        try { window.__GF_SET_ACTIVE(0); return; } catch {}
+      }
+      const first = document.querySelector('[data-gfocus]');
+      if (first) {
+        first.classList.add('gfocus-active');
+        if (first.focus) first.focus();
+      }
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(forceInitialFocus, 0);
+      setTimeout(forceInitialFocus, 150);
+    });
   </script>
 </body>
 </html>

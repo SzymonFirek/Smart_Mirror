@@ -10,11 +10,12 @@ headers = {
 
 # Lista darmowych modeli do rotacji
 DARMOWE_MODELE = [
-    "qwen/qwen3-235b-a22b-07-25:free",
+    "openai/gpt-oss-20b:free",
     "deepseek/deepseek-chat-v3-0324:free",
-    "mistralai/mistral-7b-instruct:free",
+    "nousresearch/nous-capybara-7b:free",
     "openchat/openchat-7b:free",
-    "nousresearch/nous-capybara-7b:free"
+    "mistralai/mistral-7b-instruct:free"
+
 ]
 
 
@@ -24,7 +25,7 @@ def zapytaj_openrouter(prompt: str, modele: list[str] = DARMOWE_MODELE) -> str:
         data = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "Jesteś pomocnym asystentem mówiącym po polsku. Odpowiadaj krótko i zwięźle."},
+                {"role": "system", "content": "Jesteś pomocnym asystentem mówiącym po polsku. Odpowiadaj krótko i zwięźle. Nie używaj pogrubionej czcionki"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,

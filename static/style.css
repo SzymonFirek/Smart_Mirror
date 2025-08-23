@@ -1,12 +1,53 @@
+:root {
+    --bg: #000;
+    --text: #fff;
+    --muted: #b7b7b7;
+    --panel: rgba(255, 255, 255, 0.06);
+    --accent: #4a90e2;
+    --accent-weak: rgba(74, 144, 226, 0.25);
+}
+
+* { box-sizing: border-box; }
+
 body {
-    background-color: black;
-    color: white;
+    margin: 0;
+    background-color: var(--bg);
+    color: var(--text);
     font-family: Arial, sans-serif;
     text-align: center;
     padding-top: 50px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    width: min(100%, 960px);
+    margin: 0 auto;
+    padding: 0 16px;
+}
+
+/* --- GŁÓWNY UKŁAD, POGODA, PROGNOZA --- */
+.top-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.weather {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
 }
 .weather img {
-    width: 60px;
+    width: 64px;
+    height: 64px;
+}
+.weather .main {
+    font-size: 1.2rem;
+    line-height: 1.1;
 }
 
 .forecast-container {
@@ -14,15 +55,98 @@ body {
     justify-content: center;
     gap: 20px;
     text-align: center;
+    flex-wrap: wrap;
 }
 .forecast-item {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--panel);
     padding: 10px;
-    border-radius: 10px;
+    border-radius: 12px;
     min-width: 100px;
+    backdrop-filter: blur(2px);
 }
 
 ul {
     list-style-type: none;
     padding: 0;
+    margin: 0.5rem 0 0;
+}
+
+/* --- TOOLBAR I ELEMENTY STEROWANIA --- */
+.toolbar {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    margin: 12px 0 18px;
+    flex-wrap: wrap;
+}
+
+button,
+.btn,
+.toolbar a[data-gfocus],
+a.btn {
+    appearance: none;
+    border: 1px solid transparent;
+    background: #111;
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+    box-shadow: 0 0 0 0 rgba(0,0,0,0);
+}
+button:hover,
+.btn:hover,
+.toolbar a[data-gfocus]:hover,
+a.btn:hover {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px var(--accent-weak);
+}
+button:active,
+.btn:active,
+.toolbar a[data-gfocus]:active,
+a.btn:active {
+    transform: translateY(0);
+}
+
+/* --- TYPO --- */
+h1 { font-size: clamp(2.6rem, 4vw, 4rem); margin: 0 0 0.3rem; }
+h2 { font-size: clamp(1.3rem, 2vw, 1.6rem); margin: 1.1rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+h3 { font-size: 1.05rem; margin: 0.8rem 0 0.4rem; color: var(--muted); font-weight: 500; }
+
+/* --- KONTENER CZATU --- */
+#chat {
+    border: 1px solid #333;
+    background: #0c0c0c;
+    border-radius: 12px;
+}
+.bubble { border-radius: 18px; }
+.bubble.user { background: #1a4f8c; }
+.bubble.assistant { background: #222; }
+.bubble.system { background: #444; }
+
+/* --- REDUKCJA ANIMACJI --- */
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+}
+
+/* --- PODŚWIETLENIE AKTYWNEGO ELEMENTU (gesty/strzałki) --- */
+[data-gfocus] { -webkit-tap-highlight-color: transparent; }
+
+/* Nie wyłączaj outline, gdy element jest aktywny wg naszego skryptu */
+[data-gfocus]:focus:not(.gfocus-active) {
+    outline: none !important;
+}
+
+/* MUSI BYĆ NA SAMYM KOŃCU, aby wygrać z innymi regułami */
+[data-gfocus].gfocus-active {
+    outline: 4px solid var(--accent) !important;
+    outline-offset: 6px;
+    border-radius: 14px;
+    /* opcjonalnie:
+    box-shadow: 0 0 0 4px var(--accent-weak);
+    */
 }

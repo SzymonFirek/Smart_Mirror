@@ -4,18 +4,50 @@
     <meta charset="UTF-8">
     <title>Smart Mirror</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/gesture_focus.js" defer></script>
 </head>
 <body>
     <div class="container">
+
+        <div class="toolbar">
+            <button data-gfocus data-genter="js:window.history.back()">⬅ Wstecz</button>
+            <a data-gfocus data-genter="link" href="/user/asystent_chat">🎤 Asystent</a>
+            <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
+        </div>
+
         <h1>{{ time }}</h1>
         <p>{{ date }}</p>
 
-        <div class="weather">
-            <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="Pogoda">
-            <p>{{ weather.temp }}°C – {{ weather.desc }}</p>
+        <div class="top-row">
+            <div class="weather">
+                <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="weather">
+                <div class="main">
+                    <div>{{ weather.temp }}°C</div>
+                    <div style="font-size:0.9rem; opacity:0.85;">{{ weather.desc }}</div>
+                </div>
+            </div>
+
+            <div class="weather">
+                <div class="main">
+                    {# — bezpieczne wartości startowe — #}
+                    {% set has_t = (temperatura is not none) %}
+                    {% set has_h = (wilgotnosc  is not none) %}
+                    {% set tval = (temperatura|round(1)) if has_t else '?' %}
+                    {% set hval = (wilgotnosc|round(0))  if has_h else '?' %}
+
+                    <div id="sensor-line" style="{{ '' if (has_t or has_h) else 'display:none' }}">
+                        <span id="temp-val">{{ tval }}</span>°C  /  <span id="hum-val">{{ hval }}</span>%
+                    </div>
+                    <div id="sensor-nodata" style="{{ 'display:none' if (has_t or has_h) else '' }}">
+                        Brak danych
+                    </div>
+
+                    <div style="font-size:0.9rem; opacity:0.85;">Zmierzona temperatura i wilgotność</div>
+                </div>
+            </div>
         </div>
 
-        <h3 style="text-align: center;">Prognoza na dziś:</h3>
+        <h3>Prognoza na dziś:</h3>
         <div class="forecast-container">
             {% for item in forecast %}
                 <div class="forecast-item">
@@ -67,25 +99,79 @@
         </ul>
     </div>
 
-<script>
-let hotwordDetected = false;
-const interval = setInterval(() => {
-    if (hotwordDetected) return;
+    <script>
+    // Hotword → przejście do asystenta
+    let hotwordDetected = false;
+    const hotwordInterval = setInterval(() => {
+        if (hotwordDetected) return;
 
-    fetch('/check_hotword')
-        .then(response => response.json())
-        .then(data => {
-            console.log("Hotword check:", data);
-            if (data.detected === true) {
-                hotwordDetected = true;  // zapobiega kolejnym sprawdzeniom
-                clearInterval(interval); // opcjonalnie zatrzymuje całkowicie
-                window.location.href = '/user/asystent_chat';
+        fetch('/check_hotword')
+            .then(r => r.json())
+            .then(data => {
+                if (data.detected === true) {
+                    hotwordDetected = true;
+                    clearInterval(hotwordInterval);
+                    window.location.href = '/user/asystent_chat';
+                }
+            })
+            .catch(err => console.error("Błąd fetch:", err));
+    }, 1000);
+
+    // Auto-odświeżanie czujnika iNode (adaptacyjne: szybko do pierwszych danych, potem rzadziej)
+    let sensorsHaveData = false;
+    let sensorsTimer = null;
+
+    function scheduleSensorsPolling(ms) {
+        if (sensorsTimer) clearInterval(sensorsTimer);
+        sensorsTimer = setInterval(refreshSensors, ms);
+    }
+
+    async function refreshSensors() {
+        try {
+            const res = await fetch('/api/sensors', { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            const t = data.t, h = data.h;
+
+            const line  = document.getElementById('sensor-line');
+            const nodata = document.getElementById('sensor-nodata');
+            const tEl = document.getElementById('temp-val');
+            const hEl = document.getElementById('hum-val');
+
+            const hasT = (t !== null && t !== undefined && !Number.isNaN(t));
+            const hasH = (h !== null && h !== undefined && !Number.isNaN(h));
+
+            if (hasT || hasH) {
+                if (line)   line.style.display = '';
+                if (nodata) nodata.style.display = 'none';
+                if (tEl) tEl.textContent = hasT ? (Math.round(t * 10) / 10).toFixed(1) : '?';
+                if (hEl) hEl.textContent = hasH ? Math.round(h).toString() : '?';
+
+                // Gdy po raz pierwszy dostaliśmy dane → przełącz na rzadkie odpytywanie
+                if (!sensorsHaveData) {
+                    sensorsHaveData = true;
+                    scheduleSensorsPolling(30000); // co 30s po pierwszym sukcesie
+                }
+            } else {
+                if (line)   line.style.display = 'none';
+                if (nodata) nodata.style.display = '';
+                // Jeśli (z jakiegoś powodu) znów brak danych, wróć do szybkiego trybu
+                if (sensorsHaveData) {
+                    sensorsHaveData = false;
+                    scheduleSensorsPolling(2000);
+                }
             }
-        })
-        .catch(error => {
-            console.error("Błąd fetch:", error);
-        });
-}, 1000);
-</script>
+        } catch (e) {
+            console.error('Błąd /api/sensors:', e);
+        }
+    }
+
+    // Start: od razu próbujemy i co 2s do skutku, potem co 30s
+    refreshSensors();           // natychmiast
+    scheduleSensorsPolling(2000); // szybko, dopóki nie dostaniemy pierwszych wartości
+    // pierwszy strzał szybko po załadowaniu, potem co 30 s
+    setTimeout(refreshSensors, 1000);
+    setInterval(refreshSensors, 30000);
+    </script>
 </body>
 </html>
