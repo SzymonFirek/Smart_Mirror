@@ -1,0 +1,10 @@
+[
+  {
+    "user_id": 1,
+    "name": "Szymon",
+    "calendar_type": "google",
+    "email": "szymon@gmail.com",
+    "calendar_data": "tokens/token_1.pickle",
+    "face_encoding_path": "encodings/szymon.npy"
+  }
+]

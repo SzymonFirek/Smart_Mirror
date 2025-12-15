@@ -7,97 +7,122 @@
     <script src="/static/gesture_focus.js" defer></script>
 </head>
 <body>
+    <div class="rotate-90">
     <div class="container">
+            <div class="toolbar">
+                <a data-gfocus data-genter="link" href="/">⬅ Wstecz</a>
+                <a data-gfocus data-genter="link" href="/user/asystent_chat">🎤 Asystent</a>
+                <a data-gfocus data-genter="link" href="/user/email">📧 Email</a>
+                <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
+            </div>
 
-        <div class="toolbar">
-            <button data-gfocus data-genter="js:window.history.back()">⬅ Wstecz</button>
-            <a data-gfocus data-genter="link" href="/user/asystent_chat">🎤 Asystent</a>
-            <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
-        </div>
+            <h1>{{ time }}</h1>
+            <p>{{ date }}</p>
 
-        <h1>{{ time }}</h1>
-        <p>{{ date }}</p>
+            <div class="top-row">
+                <div class="weather">
+                    <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="weather">
+                    <div class="main">
+                        <div>{{ weather.temp }}°C</div>
+                        <div style="font-size:0.9rem; opacity:0.85;">{{ weather.desc }}</div>
+                    </div>
+                </div>
 
-        <div class="top-row">
-            <div class="weather">
-                <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="weather">
-                <div class="main">
-                    <div>{{ weather.temp }}°C</div>
-                    <div style="font-size:0.9rem; opacity:0.85;">{{ weather.desc }}</div>
+                <div class="weather">
+                    <div class="main">
+                        {# — bezpieczne wartości startowe — #}
+                        {% set has_t = (temperatura is not none) %}
+                        {% set has_h = (wilgotnosc  is not none) %}
+                        {% set tval = (temperatura|round(1)) if has_t else '?' %}
+                        {% set hval = (wilgotnosc|round(0))  if has_h else '?' %}
+
+                        <div id="sensor-line" style="{{ '' if (has_t or has_h) else 'display:none' }}">
+                            <span id="temp-val">{{ tval }}</span>°C  /  <span id="hum-val">{{ hval }}</span>%
+                        </div>
+                        <div id="sensor-nodata" style="{{ 'display:none' if (has_t or has_h) else '' }}">
+                            Brak danych
+                        </div>
+
+                        <div style="font-size:0.9rem; opacity:0.85;">Zmierzona temperatura i wilgotność</div>
+                    </div>
+                </div>
+
+                <div class="weather">
+                    <div class="main">
+                        {% if gmail_unread is not none %}
+                            <div style="font-size:1.4rem; margin-bottom:0.2rem;">
+                                {{ gmail_unread }}
+                            </div>
+                            <div style="font-size:0.9rem; opacity:0.9;">
+                            nieprzeczytanych maili
+                            </div>
+                        {% else %}
+                            <div style="font-size:1rem; margin-bottom:0.2rem;">
+                                Email
+                            </div>
+                            <div style="font-size:0.9rem; opacity:0.9;">
+                                brak danych
+                            </div>
+                        {% endif %}
+                        <div style="font-size:0.8rem; opacity:0.7; margin-top:0.4rem;">
+                            Gmail
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="weather">
-                <div class="main">
-                    {# — bezpieczne wartości startowe — #}
-                    {% set has_t = (temperatura is not none) %}
-                    {% set has_h = (wilgotnosc  is not none) %}
-                    {% set tval = (temperatura|round(1)) if has_t else '?' %}
-                    {% set hval = (wilgotnosc|round(0))  if has_h else '?' %}
-
-                    <div id="sensor-line" style="{{ '' if (has_t or has_h) else 'display:none' }}">
-                        <span id="temp-val">{{ tval }}</span>°C  /  <span id="hum-val">{{ hval }}</span>%
-                    </div>
-                    <div id="sensor-nodata" style="{{ 'display:none' if (has_t or has_h) else '' }}">
-                        Brak danych
-                    </div>
-
-                    <div style="font-size:0.9rem; opacity:0.85;">Zmierzona temperatura i wilgotność</div>
-                </div>
+            <h3>Prognoza na dziś:</h3>
+                <div class="forecast-container">
+                    {% for item in forecast %}
+                        <div class="forecast-item">
+                            <p><strong>{{ item.time }}</strong></p>
+                            <img src="https://openweathermap.org/img/wn/{{ item.icon }}@2x.png" alt="{{ item.desc }}">
+                            <p>{{ item.temp }}°C</p>
+                            <p>{{ item.desc }}</p>
+                        </div>
+                    {% endfor %}
             </div>
-        </div>
 
-        <h3>Prognoza na dziś:</h3>
-        <div class="forecast-container">
-            {% for item in forecast %}
-                <div class="forecast-item">
-                    <p><strong>{{ item.time }}</strong></p>
-                    <img src="https://openweathermap.org/img/wn/{{ item.icon }}@2x.png" alt="{{ item.desc }}">
-                    <p>{{ item.temp }}°C</p>
-                    <p>{{ item.desc }}</p>
-                </div>
-            {% endfor %}
-        </div>
-
-        <h2>Dzisiaj:</h2>
-        <ul>
-            {% for event in today_events %}
-                <li>
-                {% if event.time %}
-                    {{ event.time }} – {{ event.title }}
-                {% else %}
-                    {{ event.title }}
-                {% endif %}
-                </li>
-            {% else %}
-                <li>Brak wydarzeń na dziś</li>
-            {% endfor %}
-        </ul>
-
-        <h2>Przyszłe:</h2>
-        <ul>
-            {% for event in future_events %}
-                <li>
-                    {{ event.date_str }}
+            <h2>Dzisiaj:</h2>
+            <ul>
+                {% for event in today_events %}
+                    <li>
                     {% if event.time %}
-                        {{ event.time }} –
+                        {{ event.time }} – {{ event.title }}
+                    {% else %}
+                        {{ event.title }}
                     {% endif %}
-                    {{ event.title }}
-                </li>
-            {% else %}
-                <li>Brak nadchodzących wydarzeń</li>
-            {% endfor %}
-        </ul>
+                    </li>
+                {% else %}
+                    <li>Brak wydarzeń na dziś</li>
+                {% endfor %}
+            </ul>
 
-        <h2>Zadania:</h2>
-        <ul>
-            {% for task in tasks %}
-                <li>{{ task.due }} – {{ task.title }}</li>
-            {% else %}
-                <li>Brak zadań</li>
-            {% endfor %}
-        </ul>
+            <h2>Przyszłe:</h2>
+            <ul>
+                {% for event in future_events %}
+                    <li>
+                        {{ event.date_str }}
+                        {% if event.time %}
+                            {{ event.time }} –
+                        {% endif %}
+                        {{ event.title }}
+                    </li>
+                {% else %}
+                    <li>Brak nadchodzących wydarzeń</li>
+                {% endfor %}
+            </ul>
+
+            <h2>Zadania:</h2>
+            <ul>
+                {% for task in tasks %}
+                    <li>{{ task.due }} – {{ task.title }}</li>
+                {% else %}
+                    <li>Brak zadań</li>
+                {% endfor %}
+            </ul>
     </div>
+    </div> <!-- .rotate-90 -->
 
     <script>
     // Hotword → przejście do asystenta
@@ -167,11 +192,81 @@
     }
 
     // Start: od razu próbujemy i co 2s do skutku, potem co 30s
-    refreshSensors();           // natychmiast
+    refreshSensors();             // natychmiast
     scheduleSensorsPolling(2000); // szybko, dopóki nie dostaniemy pierwszych wartości
     // pierwszy strzał szybko po załadowaniu, potem co 30 s
     setTimeout(refreshSensors, 1000);
     setInterval(refreshSensors, 30000);
+
+    // =========================
+    // Gesty dłoni → symulacja klawiatury
+    // =========================
+
+    function simulateKey(keyName) {
+    console.log("simulateKey:", keyName);
+
+    const eventInit = {
+        key: keyName,
+        code: keyName,
+        bubbles: true
+    };
+
+    // tworzymy osobne eventy, żeby każdy miał pełną ścieżkę propagacji
+    const targets = [];
+    if (document) targets.push(document);
+    if (document.body) targets.push(document.body);
+    if (window) targets.push(window);
+
+    targets.forEach(target => {
+        try {
+            const evt = new KeyboardEvent("keydown", eventInit);
+            target.dispatchEvent(evt);
+        } catch (e) {
+            console.error("Błąd dispatchEvent dla", keyName, "na", target, e);
+        }
+    });
+    }
+
+
+    function handleGesture(gesture) {
+        switch (gesture) {
+            case "swipe_left":
+                simulateKey("ArrowLeft");
+                break;
+            case "swipe_right":
+                simulateKey("ArrowRight");
+                break;
+            case "swipe_up":
+                simulateKey("ArrowUp");
+                break;
+            case "swipe_down":
+                simulateKey("ArrowDown");
+                break;
+            case "ok":
+                simulateKey("Enter");
+                break;
+        }
+    }
+
+    async function pollGestures() {
+        try {
+            const res = await fetch("/api/gesture", { cache: "no-store" });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.gesture) {
+                console.log("GESTURE FROM API:", data.gesture);
+                handleGesture(data.gesture);
+            }
+        } catch (e) {
+            console.error("Błąd /api/gesture:", e);
+        } finally {
+            // następne zapytanie za 200 ms
+            setTimeout(pollGestures, 200);
+        }
+    }
+
+    // Skrypt jest na końcu body, DOM już jest → można od razu startować
+    pollGestures();
     </script>
 </body>
 </html>

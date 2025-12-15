@@ -6,14 +6,15 @@ import subprocess
 import RPi.GPIO as GPIO
 from pathlib import Path
 
-# --- KONFIG ---
-PIR_PIN = 17
+# KONFIGURACJA
+PIR_PIN = 24
 INACTIVITY_TIME = 60
 WAKE_UP_ACTION = Path("/home/smart/Desktop/Smart_Mirror/start_desktop.sh")
 LOG_FILE = "/home/smart/Desktop/Smart_Mirror/pir_launcher.log"
 
-# --- GPIO ---
+# GPIO
 GPIO.setmode(GPIO.BCM)
+
 GPIO.setup(PIR_PIN, GPIO.IN)
 
 process = None  # Popen obiektu bash uruchamiającego start_desktop.sh
@@ -46,7 +47,6 @@ def run_wake_up_action():
         print("Ruch wykryty! Uruchamiam aplikację...")
         ensure_executable(WAKE_UP_ACTION)
         env = build_env()
-
         # loguj, co się dzieje (debug basha z set -x)
         log = open(LOG_FILE, "ab", buffering=0)
         cmd = ["/bin/bash", str(WAKE_UP_ACTION)]
@@ -101,9 +101,9 @@ def main():
     except KeyboardInterrupt:
         print("Koniec programu (Ctrl+C).")
     finally:
-        # porządek przy wyjściu
         run_sleep_action()
         GPIO.cleanup()
+        
 
 if __name__ == "__main__":
     main()

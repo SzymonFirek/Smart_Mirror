@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Email – Smart Mirror</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/gesture_focus.js" defer></script>
+</head>
+<body>
+<div class="rotate-90">
+<div class="container">
+
+    <div class="toolbar">
+        <a data-gfocus data-genter="link" href="/user">⬅ Wstecz</a>
+        <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
+    </div>
+
+    <h1>Email</h1>
+    <p>{{ user.name }}</p>
+
+    <h2>Ostatnie wiadomości:</h2>
+    <ul>
+        {% for mail in emails %}
+            <li style="margin-bottom: 1rem; text-align:left;">
+                <div><strong>{{ mail.subject }}</strong></div>
+                <div style="font-size:0.85rem; opacity:0.8;">{{ mail.from }}</div>
+                <div style="font-size:0.8rem; opacity:0.8;">{{ mail.date }}</div>
+                <div style="font-size:0.9rem; margin-top:0.3rem;">
+                    {{ mail.snippet }}
+                </div>
+            </li>
+        {% else %}
+            <li>Brak wiadomości do wyświetlenia.</li>
+        {% endfor %}
+    </ul>
+
+</div>
+</div>
+
+<script>
+    // Gesty /api/gesture do ArrowLeft/Right/Up/Down/Enter
+    function simulateKey(keyName) {
+        console.log("simulateKey:", keyName);
+
+        const eventInit = {
+            key: keyName,
+            code: keyName,
+            bubbles: true
+        };
+
+        const targets = [];
+        if (document) targets.push(document);
+        if (document.body) targets.push(document.body);
+        if (window) targets.push(window);
+
+        targets.forEach(target => {
+            try {
+                const evt = new KeyboardEvent("keydown", eventInit);
+                target.dispatchEvent(evt);
+            } catch (e) {
+                console.error("Błąd dispatchEvent dla", keyName, "na", target, e);
+            }
+        });
+    }
+
+    function handleGesture(gesture) {
+        switch (gesture) {
+            case "swipe_left":
+                simulateKey("ArrowLeft");
+                break;
+            case "swipe_right":
+                simulateKey("ArrowRight");
+                break;
+            case "swipe_up":
+                simulateKey("ArrowUp");
+                break;
+            case "swipe_down":
+                simulateKey("ArrowDown");
+                break;
+            case "ok":
+                simulateKey("Enter");
+                break;
+        }
+    }
+
+    async function pollGestures() {
+        try {
+            const res = await fetch("/api/gesture", { cache: "no-store" });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.gesture) {
+                console.log("GESTURE FROM API:", data.gesture);
+                handleGesture(data.gesture);
+            }
+        } catch (e) {
+            console.error("Błąd /api/gesture:", e);
+        } finally {
+            setTimeout(pollGestures, 200);
+        }
+    }
+
+    // start
+    pollGestures();
+</script>
+
+<script>
+    // Wymusza aktywny focus na pierwszym przycisku w toolbarze
+    function forceInitialFocus() {
+        if (window.__GF_SET_ACTIVE instanceof Function) {
+            try { window.__GF_SET_ACTIVE(0); return; } catch {}
+        }
+        const first = document.querySelector('[data-gfocus]');
+        if (first) {
+            first.classList.add('gfocus-active');
+            if (first.focus) first.focus();
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(forceInitialFocus, 0);
+        setTimeout(forceInitialFocus, 150);
+    });
+</script>
+
+</body>
+</html>

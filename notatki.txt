@@ -1,0 +1,25 @@
+1. Nie działa czujnik gestów APDS. Tzn. cały czas wykrywa zbliżenie - większy otwór?
+2. PIR - działa dobrze.
+3. Kamera - działa rozpoznawanie twarzy. gesty do poprawy
+4. Dodać hotword "poczta"
+5. Naprawić TTS
+
+
+
+
+KOD STARTERA:
+#(lokalizacja) /etc/systemd/system/smart-mirror-starter.service
+
+[Unit]
+Description=Smart Mirror STARTER (PIR / bez PIR)
+After=graphical.target network-online.target
+Wants=graphical.target
+[Service]
+Type=simple
+User=smart
+WorkingDirectory=/home/smart/Desktop/Smart_Mirror
+ExecStart=/home/smart/Desktop/Smart_Mirror/starter.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=graphical.target

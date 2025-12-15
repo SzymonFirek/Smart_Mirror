@@ -7,6 +7,7 @@
     <script src="/static/gesture_focus.js" defer></script>
 </head>
 <body>
+    <div class="rotate-90">
     <div class="container">
         <h1>{{ time }}</h1>
         <p>{{ date }}</p>
@@ -59,9 +60,10 @@
             <button id="btn-refresh" data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
         </div>
     </div>
+    </div> <!-- .rotate-90 -->
 
     <script>
-        // --- Natychmiastowe przejście po rozpoznaniu (SSE) + fallback na polling ---
+        // Natychmiastowe przejście po rozpoznaniu (SSE) + fallback na polling
         let redirected = false;
 
         (function initSSE() {
@@ -165,6 +167,72 @@
         }
         ensureRecognition();
         setInterval(ensureRecognition, 20000);
+    </script>
+
+     <script>
+        // gesty /api/gesture do ArrowLeft/Right/Up/Down/Enter
+        function simulateKey(keyName) {
+            console.log("simulateKey:", keyName);
+
+            const eventInit = {
+                key: keyName,
+                code: keyName,
+                bubbles: true
+            };
+
+            const targets = [];
+            if (document) targets.push(document);
+            if (document.body) targets.push(document.body);
+            if (window) targets.push(window);
+
+            targets.forEach(target => {
+                try {
+                    const evt = new KeyboardEvent("keydown", eventInit);
+                    target.dispatchEvent(evt);
+                } catch (e) {
+                    console.error("Błąd dispatchEvent dla", keyName, "na", target, e);
+                }
+            });
+        }
+
+        function handleGesture(gesture) {
+            switch (gesture) {
+                case "swipe_left":
+                    simulateKey("ArrowLeft");
+                    break;
+                case "swipe_right":
+                    simulateKey("ArrowRight");
+                    break;
+                case "swipe_up":
+                    simulateKey("ArrowUp");
+                    break;
+                case "swipe_down":
+                    simulateKey("ArrowDown");
+                    break;
+                case "ok":
+                    simulateKey("Enter");
+                    break;
+            }
+        }
+
+        async function pollGestures() {
+            try {
+                const res = await fetch("/api/gesture", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.gesture) {
+                    console.log("GESTURE FROM API:", data.gesture);
+                    handleGesture(data.gesture);
+                }
+            } catch (e) {
+                console.error("Błąd /api/gesture:", e);
+            } finally {
+                setTimeout(pollGestures, 200);
+            }
+        }
+
+        // start
+        pollGestures();
     </script>
 
     <script>

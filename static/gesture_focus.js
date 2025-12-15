@@ -17,35 +17,46 @@
   }
 
   function findNext(current, candidates, dir) {
-    if (!candidates.length) return null;
-    if (!current || !candidates.includes(current)) return candidates[0];
+  if (!candidates.length) return null;
+  if (!current || !candidates.includes(current)) return candidates[0];
 
-    const c0 = center(current);
-    const axis = {
-      left:  { x: -1, y:  0 },
-      right: { x:  1, y:  0 },
-      up:    { x:  0, y: -1 },
-      down:  { x:  0, y:  1 },
-    }[dir];
+  const c0 = center(current);
+  const axis = {
+    left:  { x: -1, y:  0 },
+    right: { x:  1, y:  0 },
+    up:    { x:  0, y: -1 },
+    down:  { x:  0, y:  1 },
+  }[dir];
 
-    let best = null, bestScore = -Infinity;
+  let best = null, bestScore = -Infinity;
 
-    for (const el of candidates) {
-      if (el === current) continue;
-      const c1 = center(el);
-      const v = { x: c1.x - c0.x, y: c1.y - c0.y };
-      const proj = v.x * axis.x + v.y * axis.y;
-      if (proj <= 0) continue;
-      const orth = Math.abs(v.x * axis.y - v.y * axis.x);
-      const d = Math.max(distance(c0, c1), 1);
-      const score = proj / d - orth / (d * 2);
-      if (score > bestScore) { bestScore = score; best = el; }
-    }
-
-    return best || candidates[(candidates.indexOf(current) + 1) % candidates.length];
+  for (const el of candidates) {
+    if (el === current) continue;
+    const c1 = center(el);
+    const v = { x: c1.x - c0.x, y: c1.y - c0.y };
+    const proj = v.x * axis.x + v.y * axis.y;
+    if (proj <= 0) continue;
+    const orth = Math.abs(v.x * axis.y - v.y * axis.x);
+    const d = Math.max(distance(c0, c1), 1);
+    const score = proj / d - orth / (d * 2);
+    if (score > bestScore) { bestScore = score; best = el; }
   }
 
-  // --- Fallback stylu (gdy CSS się nie zaciągnął) ---
+  // --- NOWY fallback zależny od kierunku ---
+  if (best) return best;
+
+  const idx = candidates.indexOf(current);
+  if (dir === 'left' || dir === 'up') {
+    // poprzedni w kolejności
+    return candidates[(idx - 1 + candidates.length) % candidates.length];
+  } else {
+    // następny w kolejności
+    return candidates[(idx + 1) % candidates.length];
+  }
+  }
+
+
+  // Fallback stylu (gdy CSS się nie zaciągnął)
   function applyActiveStyle(el) {
     // Jeśli CSS zadziałał, outline już istnieje — nie nadpisuj
     const cs = getComputedStyle(el);
@@ -69,7 +80,7 @@
     delete el.dataset.gfPrevRadius;
   }
 
-  // --- Debug do terminala ---
+  // Debug do terminala
   async function dbg(payload) {
     try {
       await fetch('/api/debug_key', {
@@ -81,7 +92,7 @@
     } catch {}
   }
 
-  // --- stan aktywnego elementu ---
+  // stan aktywnego elementu
   let active = null;
 
   async function setActive(el) {

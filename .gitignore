@@ -1,0 +1,11 @@
+.env
+credentials.json
+token*.pickle
+tokens/
+__pycache__/
+*.pyc
+.venv*/
+venv/
+known_faces/
+users.json
+credentials.json

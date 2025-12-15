@@ -8,7 +8,8 @@ import pytz
 
 SCOPES = [
     'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/tasks.readonly'
+    'https://www.googleapis.com/auth/tasks.readonly',
+    'https://www.googleapis.com/auth/gmail.readonly' #gmail
 ]
 
 def get_credentials(user_id=None):
@@ -31,8 +32,17 @@ def get_credentials(user_id=None):
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+                'credentials.json', SCOPES
+            )
+            # Nie otwieraj domyślnej przeglądarki (w3m w terminalu),
+            # tylko wypisz URL w logu.
+            creds = flow.run_local_server(
+                host='localhost',
+                port=8080,  # może być też 0, jeśli 8080 zajęty
+                authorization_prompt_message='[GOOGLE] Otwórz ten adres w przeglądarce: {url}',
+                success_message='[GOOGLE] Autoryzacja zakończona, możesz zamknąć okno.',
+                open_browser=False,
+            )
         with open(token_path, 'wb') as token:
             pickle.dump(creds, token)
     return creds
@@ -138,3 +148,12 @@ def get_google_tasks(user_id=None):
             })
 
     return all_tasks
+
+if __name__ == "__main__":
+    # Jednorazowa ręczna autoryzacja
+    user_id_str = input("Podaj user_id (np. 1) lub zostaw puste dla token.pickle: ").strip()
+    user_id = int(user_id_str) if user_id_str else None
+
+    creds = get_credentials(user_id)
+    print("Gotowe – token zapisany:", f"token_{user_id}.pickle" if user_id is not None else "token.pickle")
+

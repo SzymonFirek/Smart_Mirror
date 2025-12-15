@@ -1,14 +1,16 @@
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
+from gesture_recognition_module import GestureRecognizer
 from google_calendar import get_upcoming_events, get_google_tasks
 from apple_calendar import get_apple_events
 from google.auth.exceptions import RefreshError
+from google_email import get_unread_email_count, get_recent_emails
 from face_recognition_module import FaceRecognitionModule
 from mirror_user import MirrorUser
+import numpy as np
 import os
 import datetime
 import requests
 import json
-import numpy as np
 import threading
 import queue
 import sounddevice as sd
@@ -18,9 +20,9 @@ from open_router_chat import zapytaj_openrouter
 from odpowiedz_mowa import mow_tekstem
 import re
 from inode_ht import pomiar_temp, pomiar_wilg
-
-# wrzuć na górze pliku
 import time
+from dotenv import load_dotenv
+load_dotenv() #wczytywanie API z pliku .env
 
 def _t(): return time.perf_counter()
 def _log_step(tag, t0):
@@ -31,10 +33,17 @@ def _log_step(tag, t0):
 app = Flask(__name__)
 
 asystent_thread = None
-
+# hotword
 hotword_detected = False
 hotword_lock = threading.Lock()
 last_stt_text = ""
+# GESTY DŁONI
+gesture_queue = queue.Queue()
+gesture_recognizer = None
+gestures_enabled = False
+last_gesture = None
+gesture_lock = threading.Lock()
+
 
 def load_users(json_path="users.json"):
     with open(json_path, 'r') as f:
@@ -63,13 +72,15 @@ def load_users(json_path="users.json"):
 users = load_users()
 face_rec_module = FaceRecognitionModule(users)
 
-CURRENT_USER_ID = None  # Tryb normalny: None, wymuszenie user_id: np. 1
+CURRENT_USER_ID = 1  # Tryb normalny: None, wymuszenie user_id: np. 1
 
-weather_API_KEY = "d23796afecfbd9348704a408398583e1"
+weather_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 CITY = "Kraków"
+if not weather_API_KEY:
+    raise RuntimeError("Brak OPENWEATHER_API_KEY w zmiennych środowiskowych.")
 
 def get_weather():
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={weather_API_KEY}&units=metric&lang=pl"
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={weather_API_KEY}&units=metric&lang=pl"
     try:
         response = requests.get(url)
         data = response.json()
@@ -104,7 +115,7 @@ recognized_user_id = None
 recognition_thread = None
 recognition_lock = threading.Lock()
 
-# --- Cache i wątek dla iNode (nie blokujemy requestów) ---
+# Cache i wątek dla iNode (nie blokujemy requestów)
 _sensor_cache = {"t": None, "h": None, "ts": 0.0}
 _sensor_lock = threading.Lock()
 _sensor_thread = None
@@ -133,7 +144,7 @@ def _ensure_sensor_thread():
     _sensor_thread.start()
 
 
-# === SSE: prosty hub zdarzeń ===
+# SSE: prosty hub zdarzeń
 _sse_lock = threading.Lock()
 _sse_clients = []  # lista kolejek na eventy
 
@@ -159,7 +170,6 @@ def sse_events():
 
     def gen():
         try:
-            # Pierwsze linie od razu:
             yield "retry: 1500\n\n"
             yield ": connected\n\n"
             yield 'event: hello\ndata: {"ok": true}\n\n'
@@ -235,6 +245,77 @@ def hotword_listener():
                         hotword_detected = True
                     break
 
+def _gesture_queue_consumer():
+    """
+    Wątek, który odbiera gesty z kolejki od GestureRecognizer i zapisuje ostatni gest do last_gesture, żeby /api/gesture mogło go zwrócić frontendowi.
+    """
+    global gestures_enabled, last_gesture
+    while True:
+        try:
+            gesture = gesture_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+
+        if not gestures_enabled:
+            continue
+
+        print(f"[GEST] Rozpoznano gest: {gesture}")
+        # zapisz ostatni gest dla /api/gesture
+        with gesture_lock:
+            last_gesture = gesture
+
+
+def start_gesture_recognition():
+    """
+    Uruchamia rozpoznawanie gestów + wątek konsumujący kolejkę. to po rozpoznaniu użytkownika (w /user).
+    """
+    global gesture_recognizer, gestures_enabled
+
+    if gestures_enabled:
+        return
+
+    gestures_enabled = True
+
+    # konsument kolejki (jeden wątek na całą aplikację)
+    consumer_running = False
+    for t in threading.enumerate():
+        if t.name == "gesture_consumer":
+            consumer_running = True
+            break
+
+    if not consumer_running:
+        consumer_thread = threading.Thread(
+            target=_gesture_queue_consumer,
+            name="gesture_consumer",
+            daemon=True
+        )
+        consumer_thread.start()
+        print("[GEST] Wątek konsumenta kolejki gestów uruchomiony.")
+
+    #wątek rozpoznawania gestów (kamera)
+    if not gesture_recognizer or not gesture_recognizer.is_alive():
+        gesture_recognizer = GestureRecognizer(
+            gesture_queue=gesture_queue,
+            swipe_hand_mode="open",
+            debug=False,
+        )
+        gesture_recognizer.start()
+        print("[GEST] Wątek rozpoznawania gestów uruchomiony.")
+
+
+def stop_gesture_recognition():
+    global gestures_enabled, gesture_recognizer
+    gestures_enabled = False
+
+    if gesture_recognizer:
+        try:
+            gesture_recognizer.stop()
+        except Exception as e:
+            print("[GEST] Błąd przy zatrzymywaniu rozpoznawania gestów:", e)
+        gesture_recognizer = None
+        print("[GEST] Rozpoznawanie gestów zatrzymane.")
+
+
 def asystent_glosowy():
     global last_stt_text
     print("🎤 Rozpoczynam rozpoznawanie mowy (hotword wykryty)...")
@@ -257,13 +338,16 @@ def asystent_glosowy():
 @app.route('/')
 def index():
     t0 = _t()
+    stop_gesture_recognition()
+    print("Stop gestów")
+
     global recognized_user_id
     with recognition_lock:
         if CURRENT_USER_ID is not None:
             recognized_user_id = CURRENT_USER_ID
             # w trybie wymuszonym nie startujemy kamery
         else:
-            # Tryb normalny: start rozpoznawania (NIE czyścimy recognized_user_id)
+            # Tryb normalny: start rozpoznawania (NIE czyści recognized_user_id)
             start_face_recognition()
     _log_step("index: start_face_recognition + globals", t0)
 
@@ -304,8 +388,11 @@ def index_user():
     global recognized_user_id, asystent_thread
     with recognition_lock:
         user_id = recognized_user_id
-
+    # koniec rozpoznawanie twarzy, żeby zwolnić kamerę
     face_rec_module.stop_recognition()
+
+    #rozpoznawanie gestów (kamera przechodzi do GestureRecognizer)
+    start_gesture_recognition()
 
     if not (asystent_thread and asystent_thread.is_alive()):
         asystent_thread = threading.Thread(target=hotword_listener, daemon=True)
@@ -333,7 +420,7 @@ def index_user():
     current_user = next((u for u in users if u.user_id == user_id), None)
     if not current_user:
         return "Użytkownik nie znaleziony", 404
-
+   # Kalendarz
     t3 = _t()
     today_events, future_events, tasks = [], [], []
     if current_user.calendar_type == "google":
@@ -353,13 +440,33 @@ def index_user():
         today_events, future_events, tasks = [], [], []
     _log_step("user: calendars+tasks", t3)
 
+    # Gmail
+    t4 = _t()
+    gmail_unread = None
+    gmail_preview = []
+    try:
+        gmail_unread = get_unread_email_count(current_user.user_id)
+        gmail_preview = get_recent_emails(current_user.user_id, max_results=5)
+    except (RefreshError, MemoryError):
+        # np. brak ważnego tokena – możesz dodać loga
+        token_path = f"token_{current_user.user_id}.pickle"
+        if os.path.exists(token_path):
+            os.remove(token_path)
+        gmail_unread, gmail_preview = None, []
+    except Exception as e:
+        # jak Gmail padnie
+        print(f"[Gmail] Błąd pobierania maili dla user_id={current_user.user_id}: {e}")
+        gmail_unread, gmail_preview = None, []
+        _log_step("user: emails", t4)
+
     _log_step("user: TOTAL do render_template", t0)
     return render_template("index_user.html",
                            time=time_str, date=date_str,
                            weather=weather, forecast=forecast,
                            temperatura=temperatura, wilgotnosc=wilgotnosc,
                            today_events=today_events, future_events=future_events,
-                           tasks=tasks, user=current_user)
+                           tasks=tasks, user=current_user,
+                           gmail_unread=gmail_unread, gmail_preview=gmail_preview)
 
 @app.route('/check_hotword')
 def check_hotword():
@@ -377,6 +484,7 @@ def api_asystent_start():
 
 @app.route("/user/asystent_chat")
 def asystent_chat():
+    start_gesture_recognition()
     return render_template("asystent_chat.html")
 
 @app.post("/api/asystent_prompt")
@@ -402,7 +510,6 @@ def api_debug_key():
 
 @app.get("/api/sensors")
 def api_sensors():
-    # upewnij się, że wątek jest uruchomiony
     _ensure_sensor_thread()
     with _sensor_lock:
         return jsonify({
@@ -416,6 +523,48 @@ def api_ensure_recognition():
     # jeśli wątek działa, nic się nie stanie; jeśli nie, zostanie uruchomiony
     start_face_recognition()
     return jsonify(ok=True)
+
+@app.route("/api/gesture")
+def api_gesture():
+    """
+    Zwraca ostatni rozpoznany gest (i czyści go), np. {"gesture": "swipe_left"} lub {"gesture": null}
+    """
+    global last_gesture
+    with gesture_lock:
+        g = last_gesture
+        last_gesture = None
+    return jsonify({"gesture": g})
+
+@app.route('/user/email')
+def user_email():
+    global recognized_user_id
+    with recognition_lock:
+        user_id = recognized_user_id
+
+    current_user = next((u for u in users if u.user_id == user_id), None)
+    if not current_user:
+        return "Użytkownik nie znaleziony", 404
+
+    emails = []
+    error = None
+
+    try:
+        emails = get_recent_emails(current_user.user_id, max_results=10) # ile maili ma pobrać
+
+    except (RefreshError, MemoryError):
+        print(f"[Gmail] Nie można odświeżyć tokenu dla user_id = {current_user.user_id}, usuwam token.")
+        token_path = f"token_{current_user.user_id}.pickle"
+        if os.path.exists(token_path):
+            os.remove(token_path)
+        error = "Brak ważnej autoryzacji Gmail dla tego użytkownika."
+        emails = []
+
+    except Exception as e:
+        print(f"[Gmail] Inny błąd pobierania maili dla user_id={current_user.user_id}: {e}")
+        error = "Nie udało się pobrać wiadomości email."
+        emails = []
+
+    return render_template("email.html", user=current_user, emails=emails, error=error)
 
 
 if __name__ == "__main__":
