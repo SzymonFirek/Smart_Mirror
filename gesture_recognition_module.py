@@ -1,7 +1,6 @@
 import cv2
 import mediapipe as mp
 import time
-from collections import deque
 import threading
 import queue
 
@@ -12,8 +11,9 @@ class GestureRecognizer(threading.Thread):
         gesture_queue=None,
         camera_index=0,
         camera_backend=cv2.CAP_V4L2,
-        swipe_hand_mode="open",  # "open" or "fist"
+        swipe_hand_mode="open",  # zostawione dla kompatybilności, nieużywane
         debug=False,
+        show_preview=False,      # podgląd kamery do testów
     ):
         super().__init__()
         self.daemon = True
@@ -23,36 +23,48 @@ class GestureRecognizer(threading.Thread):
         self.camera_backend = camera_backend
         self.swipe_hand_mode = swipe_hand_mode
         self.debug = debug
+        self.show_preview = show_preview
 
-        # Swipe params (horizontal and vertical separately)
-        self.SWIPE_DIST_X_FRAC = 0.20   # 20% of width
-        self.SWIPE_MIN_SPEED_X_FRAC = 0.25
-
-        self.SWIPE_DIST_Y_FRAC = 0.15   # 15% of height (a bit easier)
-        self.SWIPE_MIN_SPEED_Y_FRAC = 0.20
-
-        self.SWIPE_COOLDOWN = 0.5
+        # Kierunki: statyczne pozy dłoni
+        # one  -> swipe_left
+        # two  -> swipe_right
+        self.POSE_HOLD_FRAMES = 5
+        self.POSE_COOLDOWN = 0.2
+        self.POSE_RELEASE_FRAMES = 3
 
         # OK params
         self.OK_COOLDOWN = 1.0
+        self.OK_HOLD_FRAMES = 4
+        self.OK_RELEASE_FRAMES = 3
 
         # State
-        self.positions = deque(maxlen=4)
-        self.last_swipe_time = 0.0
-        self.ok_active = False
+        self.last_pose_emit_time = 0.0
         self.last_ok_end_time = 0.0
 
-        self.prev_ok_active = False
+        self.current_pose = None
+        self.pose_streak = 0
+
+        # aktywny gest kierunkowy - żeby nie zapętlało przy trzymaniu pozy
+        self.pose_active = None
+        self.pose_release_streak = 0
+
+        self.ok_active = False
+        self.ok_streak = 0
+        self.ok_release_streak = 0
+
         self.prev_hand_state = None
+        self.prev_pose_debug = None
 
         self._stop_event = threading.Event()
 
         # MediaPipe
-        self.hands = mp.solutions.hands.Hands(
+        self.mp_hands = mp.solutions.hands
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.hands = self.mp_hands.Hands(
             max_num_hands=1,
             model_complexity=0,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6,
         )
 
         self.cap = None
@@ -70,118 +82,211 @@ class GestureRecognizer(threading.Thread):
                 if not ret:
                     continue
 
-                h, w, _ = frame.shape
-
-                # thresholds dependent on resolution
-                horiz_dist_threshold = self.SWIPE_DIST_X_FRAC * w
-                horiz_speed_threshold = self.SWIPE_MIN_SPEED_X_FRAC * w
-
-                vert_dist_threshold = self.SWIPE_DIST_Y_FRAC * h
-                vert_speed_threshold = self.SWIPE_MIN_SPEED_Y_FRAC * h
+                # lustrzane odbicie jest wygodniejsze do testów gestów
+                frame = cv2.flip(frame, 1)
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = self.hands.process(rgb)
 
                 now = time.time()
+                emitted_label = None
 
                 if results.multi_hand_landmarks:
                     hand = results.multi_hand_landmarks[0]
 
+                    if self.show_preview:
+                        self.mp_drawing.draw_landmarks(
+                            frame,
+                            hand,
+                            self.mp_hands.HAND_CONNECTIONS
+                        )
+
                     hand_state = self.get_hand_state(hand)
-                    open_hand_flag = hand_state == "open"
-                    fist_flag = hand_state == "fist"
 
                     if self.debug and hand_state != self.prev_hand_state:
-                        print(
-                            "DEBUG hand_state:",
-                            hand_state,
-                            "open_hand_flag:",
-                            open_hand_flag,
-                            "fist_flag:",
-                            fist_flag,
-                        )
+                        print("DEBUG hand_state:", hand_state)
                         self.prev_hand_state = hand_state
 
-                    # center of hand (middle finger MCP, landmark 9)
-                    cx = int(hand.landmark[9].x * w)
-                    cy = int(hand.landmark[9].y * h)
-
-                    self.positions.append((now, cx, cy))
-
-                    # Swipe detection for selected hand shape
-                    if hand_state == self.swipe_hand_mode and len(self.positions) >= 3:
-                        t0, x0, y0 = self.positions[0]
-                        t1, x1, y1 = self.positions[-1]
-
-                        dt = t1 - t0
-                        if dt > 0:
-                            dx = x1 - x0
-                            dy = y1 - y0
-
-                            # separate thresholds for horizontal vs vertical
-                            if abs(dx) > abs(dy):
-                                # horizontal swipe
-                                dist_x = abs(dx)
-                                speed_x = dist_x / dt
-
-                                if (
-                                    dist_x > horiz_dist_threshold
-                                    and speed_x > horiz_speed_threshold
-                                    and (now - self.last_swipe_time > self.SWIPE_COOLDOWN)
-                                ):
-                                    # mirror: dx > 0 means visual move right, user hand moves left
-                                    gesture = "swipe_left" if dx > 0 else "swipe_right"
-
-                                    if self.debug:
-                                        print("GEST:", gesture)
-
-                                    self.gesture_queue.put(gesture)
-                                    self.last_swipe_time = now
-                                    self.positions.clear()
-                            else:
-                                # vertical swipe
-                                dist_y = abs(dy)
-                                speed_y = dist_y / dt
-
-                                if (
-                                    dist_y > vert_dist_threshold
-                                    and speed_y > vert_speed_threshold
-                                    and (now - self.last_swipe_time > self.SWIPE_COOLDOWN)
-                                ):
-                                    gesture = "swipe_down" if dy > 0 else "swipe_up"
-
-                                    if self.debug:
-                                        print("GEST:", gesture)
-
-                                    self.gesture_queue.put(gesture)
-                                    self.last_swipe_time = now
-                                    self.positions.clear()
-
-                    # OK gesture with edge detection and cooldown after release
-                    self.prev_ok_active = self.ok_active
+                    # 1) OK ma priorytet i zostaje statyczny
                     is_ok = self.is_ok_gesture(hand)
 
                     if is_ok:
-                        if (
-                            not self.ok_active
-                            and (now - self.last_ok_end_time > self.OK_COOLDOWN)
-                        ):
-                            if self.debug:
-                                print("GEST: OK")
-                            self.gesture_queue.put("ok")
-                            self.ok_active = True
+                        self.ok_streak += 1
+                        self.ok_release_streak = 0
                     else:
+                        self.ok_streak = 0
                         if self.ok_active:
+                            self.ok_release_streak += 1
+                            if self.ok_release_streak >= self.OK_RELEASE_FRAMES:
+                                self.ok_active = False
+                                self.last_ok_end_time = now
+                                self.ok_release_streak = 0
+                        else:
+                            self.ok_release_streak = 0
+
+                    if (
+                        is_ok
+                        and not self.ok_active
+                        and self.ok_streak >= self.OK_HOLD_FRAMES
+                        and (now - self.last_ok_end_time > self.OK_COOLDOWN)
+                    ):
+                        if self.debug:
+                            print("GEST: OK")
+
+                        self.gesture_queue.put("ok")
+                        self.ok_active = True
+                        self.ok_release_streak = 0
+                        emitted_label = "ok"
+
+                        # reset pozy kierunkowych po OK
+                        self.current_pose = None
+                        self.pose_streak = 0
+                        self.pose_active = None
+                        self.pose_release_streak = 0
+
+                    # 2) Kierunki jako statyczne pozy
+                    if not is_ok:
+                        pose = self.classify_direction_pose(hand)
+
+                        # obsługa "puszczenia" wcześniej wyemitowanego gestu
+                        if self.pose_active is not None:
+                            if pose != self.pose_active:
+                                self.pose_release_streak += 1
+                                if self.pose_release_streak >= self.POSE_RELEASE_FRAMES:
+                                    self.pose_active = None
+                                    self.pose_release_streak = 0
+                            else:
+                                self.pose_release_streak = 0
+
+                        # zwykłe zliczanie stabilnej pozy
+                        if pose == self.current_pose and pose is not None:
+                            self.pose_streak += 1
+                        elif pose is not None:
+                            self.current_pose = pose
+                            self.pose_streak = 1
+                        else:
+                            self.current_pose = None
+                            self.pose_streak = 0
+
+                        if self.debug and pose != self.prev_pose_debug:
+                            print("DEBUG pose:", pose)
+                            self.prev_pose_debug = pose
+
+                        # emituj tylko jeśli poza jest stabilna
+                        # i nie jest aktualnie aktywna
+                        if (
+                            pose is not None
+                            and pose == self.current_pose
+                            and self.pose_streak >= self.POSE_HOLD_FRAMES
+                            and self.pose_active is None
+                            and (now - self.last_pose_emit_time > self.POSE_COOLDOWN)
+                        ):
+                            if pose == "one":
+                                gesture = "swipe_left"
+                            elif pose == "two":
+                                gesture = "swipe_right"
+                            else:
+                                gesture = None
+
+                            if gesture:
+                                if self.debug:
+                                    print("GEST:", gesture)
+
+                                self.gesture_queue.put(gesture)
+                                self.last_pose_emit_time = now
+                                emitted_label = gesture
+
+                                # zapamiętaj, że ten gest jest już "wciśnięty"
+                                self.pose_active = pose
+                                self.pose_release_streak = 0
+
+                    if self.show_preview:
+                        self.draw_debug_overlay(
+                            frame=frame,
+                            hand_state=hand_state,
+                            pose=self.current_pose,
+                            pose_streak=self.pose_streak,
+                            ok_streak=self.ok_streak,
+                            emitted=emitted_label,
+                        )
+
+                else:
+                    self.current_pose = None
+                    self.pose_streak = 0
+                    self.ok_streak = 0
+
+                    # zwalnianie aktywnego gestu kierunkowego
+                    if self.pose_active is not None:
+                        self.pose_release_streak += 1
+                        if self.pose_release_streak >= self.POSE_RELEASE_FRAMES:
+                            self.pose_active = None
+                            self.pose_release_streak = 0
+                    else:
+                        self.pose_release_streak = 0
+
+                    # zwalnianie aktywnego OK
+                    if self.ok_active:
+                        self.ok_release_streak += 1
+                        if self.ok_release_streak >= self.OK_RELEASE_FRAMES:
                             self.ok_active = False
                             self.last_ok_end_time = now
+                            self.ok_release_streak = 0
+                    else:
+                        self.ok_release_streak = 0
 
-                    if self.debug and self.ok_active != self.prev_ok_active:
-                        print("DEBUG ok_active:", self.ok_active)
+                    if self.show_preview:
+                        self.draw_debug_overlay(
+                            frame=frame,
+                            hand_state="no_hand",
+                            pose=None,
+                            pose_streak=0,
+                            ok_streak=0,
+                            emitted=None,
+                        )
+
+                if self.show_preview:
+                    cv2.imshow("GestureRecognizer demo", frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == 27 or key == ord("q"):
+                        self.stop()
+                        break
 
         finally:
             if self.cap is not None:
                 self.cap.release()
             self.hands.close()
+            if self.show_preview:
+                cv2.destroyAllWindows()
+
+    def draw_debug_overlay(self, frame, hand_state, pose, pose_streak, ok_streak, emitted):
+        lines = [
+            f"hand_state: {hand_state}",
+            f"pose: {pose}",
+            f"pose_streak: {pose_streak}",
+            f"pose_active: {self.pose_active}",
+            f"pose_release: {self.pose_release_streak}",
+            f"ok_streak: {ok_streak}",
+            f"ok_active: {self.ok_active}",
+            f"ok_release: {self.ok_release_streak}",
+            f"emit: {emitted or '-'}",
+            "one=index only -> LEFT",
+            "two=index+middle -> RIGHT",
+            "q / ESC -> quit",
+        ]
+
+        y = 30
+        for line in lines:
+            cv2.putText(
+                frame,
+                line,
+                (10, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
+            y += 28
 
     @staticmethod
     def is_ok_gesture(hand_landmarks):
@@ -217,27 +322,73 @@ class GestureRecognizer(threading.Thread):
         return True
 
     @staticmethod
-    def get_hand_state(hand_landmarks):
+    def get_finger_states(hand_landmarks):
         """
-        Count extended fingers (index, middle, ring, little)
-        4 extended -> "open"
-        1 or less extended -> "fist"
-        else -> "other"
+        Zwraca dict:
+        {
+            "thumb": bool,
+            "index": bool,
+            "middle": bool,
+            "ring": bool,
+            "pinky": bool
+        }
+        Na start kciuk liczymy pomocniczo, ale logika one/two
+        opiera się głównie o index/middle/ring/pinky.
         """
         lm = hand_landmarks.landmark
 
         def is_finger_extended(tip_id, pip_id):
             return lm[tip_id].y < lm[pip_id].y
 
-        extended = 0
-        if is_finger_extended(8, 6):
-            extended += 1
-        if is_finger_extended(12, 10):
-            extended += 1
-        if is_finger_extended(16, 14):
-            extended += 1
-        if is_finger_extended(20, 18):
-            extended += 1
+        # bardzo uproszczone dla kciuka — tylko pomocniczo
+        thumb_extended = abs(lm[4].x - lm[3].x) > 0.03
+
+        return {
+            "thumb": thumb_extended,
+            "index": is_finger_extended(8, 6),
+            "middle": is_finger_extended(12, 10),
+            "ring": is_finger_extended(16, 14),
+            "pinky": is_finger_extended(20, 18),
+        }
+
+    @classmethod
+    def classify_direction_pose(cls, hand_landmarks):
+        """
+        Statyczne pozy kierunkowe:
+        - one: wyprostowany tylko wskazujący -> LEFT
+        - two: wyprostowany wskazujący i środkowy -> RIGHT
+
+        Kciuk ignorujemy, żeby nie psuł stabilności.
+        """
+        fs = cls.get_finger_states(hand_landmarks)
+
+        index_ = fs["index"]
+        middle_ = fs["middle"]
+        ring_ = fs["ring"]
+        pinky_ = fs["pinky"]
+
+        # only index
+        if index_ and not middle_ and not ring_ and not pinky_:
+            return "one"
+
+        # index + middle
+        if index_ and middle_ and not ring_ and not pinky_:
+            return "two"
+
+        return None
+
+    @classmethod
+    def get_hand_state(cls, hand_landmarks):
+        """
+        Zachowane dla debugowania / kompatybilności.
+        """
+        fs = cls.get_finger_states(hand_landmarks)
+        extended = sum([
+            fs["index"],
+            fs["middle"],
+            fs["ring"],
+            fs["pinky"],
+        ])
 
         if extended == 4:
             return "open"
@@ -249,25 +400,33 @@ class GestureRecognizer(threading.Thread):
 
 def _demo():
     """
-    Simple demo when running this file directly:
+    Demo do uruchamiania bezpośrednio na RPi:
     python gesture_recognition_module.py
+
+    Pokazuje podgląd z kamery i wypisuje rozpoznane gesty.
     """
     gq = queue.Queue()
     recognizer = GestureRecognizer(
         gesture_queue=gq,
         swipe_hand_mode="open",
         debug=True,
+        show_preview=True,
     )
     recognizer.start()
 
     print("GestureRecognizer demo running.")
-    print("Show gestures to the camera (OK, swipes).")
-    print("Press Ctrl+C to stop.\n")
+    print("Gest ONE (sam wskazujący) -> swipe_left")
+    print("Gest TWO (wskazujący + środkowy) -> swipe_right")
+    print("Gest OK -> ok")
+    print("Press q in preview window or Ctrl+C in terminal to stop.\n")
 
     try:
-        while True:
-            gesture = gq.get()
-            print("DEMO got gesture:", gesture)
+        while recognizer.is_alive():
+            try:
+                gesture = gq.get(timeout=0.2)
+                print("DEMO got gesture:", gesture)
+            except queue.Empty:
+                pass
     except KeyboardInterrupt:
         print("\nStopping demo...")
     finally:

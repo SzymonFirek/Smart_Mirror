@@ -7,7 +7,19 @@ from vosk import Model, KaldiRecognizer
 
 MODEL_PATH = "vosk-model-small-pl-0.22"
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 8000
+BLOCK_SIZE = 4000
+VOSK_MODEL = None
+MODEL_LOCK = threading.Lock()
+
+def get_vosk_model():
+    global VOSK_MODEL
+    if VOSK_MODEL is None:
+        with MODEL_LOCK:
+            if VOSK_MODEL is None:
+                print("Ładuję model Vosk do pamięci...")
+                VOSK_MODEL = Model(MODEL_PATH)
+                print("✅ Model Vosk załadowany.")
+    return VOSK_MODEL
 
 def rozpoznaj_mowe() -> str:
     q = queue.Queue()
@@ -21,13 +33,12 @@ def rozpoznaj_mowe() -> str:
 
     print("🎤 Mów teraz (rozpoznawanie zakończy się po 5 sekundach ciszy)...")
 
-    model = Model(MODEL_PATH)
-    recognizer = KaldiRecognizer(model, SAMPLE_RATE)
+    recognizer = KaldiRecognizer(get_vosk_model(), SAMPLE_RATE)
 
     cisza_start = None
     start_time = time.time()
-    MAX_CISZA = 5  # sekundy ciszy kończące rozpoznawanie
-    MAX_CALKOWITY = 10  # max 10 sekund całkowitego czasu rozpoznawania
+    MAX_CISZA = 2  # sekundy ciszy kończące rozpoznawanie
+    MAX_CALKOWITY = 5  # max sekund całkowitego czasu rozpoznawania
 
     try:
         with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE,
@@ -56,7 +67,7 @@ def rozpoznaj_mowe() -> str:
                 if cisza_start is None and bufor:
                     cisza_start = time.time()
                 if cisza_start and (time.time() - cisza_start > MAX_CISZA):
-                    print("🛑 Cisza > 5 sekundy - kończę nagrywanie.")
+                    print("🛑 Cisza > 3 sekundy - kończę nagrywanie.")
                     break
 
     except KeyboardInterrupt:

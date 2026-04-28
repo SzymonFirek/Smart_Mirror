@@ -1,5 +1,5 @@
 from gtts import gTTS
-from playsound import playsound
+import subprocess
 import tempfile
 import os
 import time
@@ -29,7 +29,7 @@ def mow_tekstem(text: str, lang: str = 'pl'):
     """Zamienia tekst na mowę i odtwarza go."""
     try:
         # Stwórz plik tymczasowy, ale nie usuwaj automatycznie
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
             sciezka = "output.mp3"
 
         # Wygeneruj mowę i zapisz do pliku
@@ -40,7 +40,7 @@ def mow_tekstem(text: str, lang: str = 'pl'):
         time.sleep(0.2)  # 200 ms daje systemowi czas na zamknięcie pliku
 
         # Odtwórz plik
-        playsound(sciezka)
+        subprocess.run(["mpg123", "-q", sciezka], check=True)
 
         # Usuń plik ręcznie po odtworzeniu
         os.remove(sciezka)

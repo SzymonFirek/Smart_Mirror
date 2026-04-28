@@ -32,13 +32,13 @@ def get_credentials(user_id=None):
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES
+                'Dane_users/credentials.json', SCOPES
             )
             # Nie otwieraj domyślnej przeglądarki (w3m w terminalu),
             # tylko wypisz URL w logu.
             creds = flow.run_local_server(
                 host='localhost',
-                port=8080,  # może być też 0, jeśli 8080 zajęty
+                port=0,  # może być też 0, jeśli 8080 zajęty
                 authorization_prompt_message='[GOOGLE] Otwórz ten adres w przeglądarce: {url}',
                 success_message='[GOOGLE] Autoryzacja zakończona, możesz zamknąć okno.',
                 open_browser=False,

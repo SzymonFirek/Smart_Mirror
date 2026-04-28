@@ -11,14 +11,13 @@ headers = {
 
 # Lista darmowych modeli do rotacji
 DARMOWE_MODELE = [
+    "openrouter/free",
     "openai/gpt-oss-20b:free",
     "deepseek/deepseek-chat-v3-0324:free",
     "nousresearch/nous-capybara-7b:free",
     "openchat/openchat-7b:free",
     "mistralai/mistral-7b-instruct:free"
-
 ]
-
 
 def zapytaj_openrouter(prompt: str, modele: list[str] = DARMOWE_MODELE) -> str:
     for model in modele:
@@ -42,17 +41,13 @@ def zapytaj_openrouter(prompt: str, modele: list[str] = DARMOWE_MODELE) -> str:
                 if not odpowiedz or "no text to speech" in odpowiedz.lower():
                     print(f"⚠️ Model {model} nie zwrócił użytecznej odpowiedzi.")
                     continue  # Próbuj kolejnego modelu
-
                 return odpowiedz
-
             else:
                 print(f"⚠️ Błąd modelu {model}: {response.status_code} - {response.text}")
                 continue
-
         except Exception as e:
             print(f"❌ Wyjątek przy modelu {model}: {e}")
             continue
-
     return "Niestety, żaden z modeli nie odpowiedział poprawnie."
 
 

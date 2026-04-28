@@ -1,11 +1,43 @@
+# Sekrety
 .env
 credentials.json
+client_secret*.json
+# Tokeny Google
 token*.pickle
 tokens/
-__pycache__/
+token_*.pickle
+tokens/
+*.pickle
 *.pyc
 .venv*/
 venv/
+# Dane użytkowników
 known_faces/
 users.json
-credentials.json
+Dane_users/
+encodings/
+*.npy
+index_user2.html
+# Logi i runtime
+*.log
+mirror.log
+pir_launcher.log
+pillsner_logs.json
+output.mp3
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+# Venv
+venv/
+.venv/
+# Modele lokalne
+vosk-model*/
+# IDE
+.idea/
+# Tymczasowe
+*.tmp
+KOMENDY TERMINAL.txt
+dpkg_rpi4.txt
+notatki.txt
+test_ble_scan.py

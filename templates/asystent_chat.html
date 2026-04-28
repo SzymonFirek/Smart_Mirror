@@ -22,7 +22,7 @@
     .bubble {
       position: relative; max-width: 78%;
       padding: 14px 18px; margin: 12px 0; border-radius: 20px;
-      line-height: 1.45; font-size: 1rem; white-space: pre-wrap;
+      line-height: 1.45; font-size: 2rem; white-space: pre-wrap;
       word-wrap: break-word; overflow-wrap: anywhere; clear: both;
       box-shadow: 0 6px 18px rgba(0,0,0,0.35);
       border: 1px solid rgba(255,255,255,0.06);
@@ -46,7 +46,7 @@
 
     <!-- Pasek nawigacji (strzałki/gesty + ENTER) -->
     <div class="toolbar" style="margin-bottom:12px;">
-      <button data-gfocus data-genter="js:window.history.back()">⬅ Wstecz</button>
+      <button data-gfocus data-genter="js:window.location.href='/user'">⬅ Wstecz</button>
       <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
       <button id="btn-again" data-gfocus data-genter="js:chatSequence()">🎤 Nowe pytanie</button>
     </div>
@@ -92,10 +92,19 @@
         }
 
         if (assistantText) {
-          addBubble(assistantText, 'assistant');
+            addBubble(assistantText, 'assistant');
+            await new Promise(requestAnimationFrame);
+            await new Promise(requestAnimationFrame);
+
+            fetch('/api/asystent_tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: assistantText })
+            }).catch(err => console.error('TTS error:', err));
         } else {
           addBubble('Asystent nie odpowiedział.', 'system');
         }
+
       } catch (err) {
         console.error(err);
         if (loading && loading.parentNode) loading.parentNode.removeChild(loading);
@@ -130,28 +139,16 @@
   <script>
    //gesty
     function simulateKey(keyName) {
-    console.log("simulateKey:", keyName);
+        console.log("simulateKey:", keyName);
 
-        const eventInit = {
-        key: keyName,
-        code: keyName,
-        bubbles: true
-        };
+        const evt = new KeyboardEvent("keydown", {
+            key: keyName,
+            code: keyName,
+            bubbles: true
+        });
 
-    const targets = [];
-    if (document) targets.push(document);
-    if (document.body) targets.push(document.body);
-    if (window) targets.push(window);
-
-    targets.forEach(target => {
-      try {
-        const evt = new KeyboardEvent("keydown", eventInit);
-        target.dispatchEvent(evt);
-      } catch (e) {
-        console.error("Błąd dispatchEvent dla", keyName, "na", target, e);
-      }
-    });
-  }
+        document.dispatchEvent(evt);
+    }
 
   function handleGesture(gesture) {
     switch (gesture) {

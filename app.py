@@ -1,4 +1,6 @@
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
+from dotenv import load_dotenv
+load_dotenv() #wczytywanie API z pliku .env
 from gesture_recognition_module import GestureRecognizer
 from google_calendar import get_upcoming_events, get_google_tasks
 from apple_calendar import get_apple_events
@@ -19,10 +21,10 @@ from rozpoznawanie_mowy import rozpoznaj_mowe
 from open_router_chat import zapytaj_openrouter
 from odpowiedz_mowa import mow_tekstem
 import re
-from inode_ht import pomiar_temp, pomiar_wilg
+from inode_ht import pomiar
 import time
-from dotenv import load_dotenv
-load_dotenv() #wczytywanie API z pliku .env
+from collections import deque
+import logging
 
 def _t(): return time.perf_counter()
 def _log_step(tag, t0):
@@ -43,16 +45,27 @@ gesture_recognizer = None
 gestures_enabled = False
 last_gesture = None
 gesture_lock = threading.Lock()
+# Leki
+PILLSNER_LOG_FILE = "pillsner_logs.json"
+pillsner_logs_lock = threading.Lock()
+pillsner_logs = deque(maxlen=20)
+PILLSNER_DEVICE_TO_USER = {
+    "pillsner_box1": 1,
+    "pillsner_box2": 2,
+}
 
+######################
+CURRENT_USER_ID = None  # Tryb normalny: None, wymuszenie user_id: np. 1
+######################
 
-def load_users(json_path="users.json"):
+def load_users(json_path="Dane_users/users.json"):
     with open(json_path, 'r') as f:
         user_dicts = json.load(f)
 
     users = []
     for u in user_dicts:
         encoding = None
-        face_encoding_path = os.path.join("known_faces", u["name"], "encoding.npy")
+        face_encoding_path = os.path.join("Dane_users/known_faces", u["name"], "encoding.npy")
         try:
             encoding = np.load(face_encoding_path)
         except FileNotFoundError:
@@ -71,8 +84,6 @@ def load_users(json_path="users.json"):
 
 users = load_users()
 face_rec_module = FaceRecognitionModule(users)
-
-CURRENT_USER_ID = 1  # Tryb normalny: None, wymuszenie user_id: np. 1
 
 weather_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 CITY = "Kraków"
@@ -125,8 +136,7 @@ def _sensor_updater_loop():
        Może blokować 10s, ale to *wątek w tle*, nie request."""
     while True:
         try:
-            t = pomiar_temp()
-            h = pomiar_wilg()
+            t, h = pomiar()
             with _sensor_lock:
                 _sensor_cache["t"] = t
                 _sensor_cache["h"] = h
@@ -155,6 +165,32 @@ def _sse_broadcast(payload: dict):
                 q.put(json.dumps(payload), block=False)
             except Exception:
                 pass  # klient mógł już się rozłączyć
+
+# LEKI
+def load_pillsner_logs():
+    global pillsner_logs
+
+    if not os.path.exists(PILLSNER_LOG_FILE):
+        return
+
+    try:
+        with open(PILLSNER_LOG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if isinstance(data, list):
+            pillsner_logs = deque(data[-20:], maxlen=20)
+
+        print(f"[PILLSNER] Wczytano {len(pillsner_logs)} logów.")
+    except Exception as e:
+        print(f"[PILLSNER] Błąd wczytywania logów: {e}")
+
+def save_pillsner_logs():
+    try:
+        with open(PILLSNER_LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(pillsner_logs), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[PILLSNER] Błąd zapisu logów: {e}")
+
 
 @app.route('/events')
 def sse_events():
@@ -217,8 +253,38 @@ MODEL_PATH = "vosk-model-small-pl-0.22"
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 4000
 
+############################################################
+asystent_thread = None
+
+# hotword
+hotword_detected = False
+hotword_target = None
+hotword_lock = threading.Lock()
+last_stt_text = ""
+
+HOTWORD_TARGETS = [
+    ("lustro", "/user/asystent_chat"),
+    ("lustereczko","/user/asystent_chat"),
+    ("asystent", "/user/asystent_chat"),
+    ("poczta", "/user/email"),
+    ("mail", "/user/email"),
+    ("maile", "/user/email"),
+    ("leki", "/user/pillsner"),
+]
+
+def detect_hotword_target(text: str):
+    text = text.lower().strip()
+    text = re.sub(r"\s+", " ", text)
+
+    for hotword, target in HOTWORD_TARGETS:
+        if hotword in text:
+            return hotword, target
+
+    return None, None
+#####################################################
+
 def hotword_listener():
-    global hotword_detected
+    global hotword_detected, hotword_target
     q = queue.Queue()
     print("🔥 Startuję nasłuchiwanie hotwordu...")
     model = Model(MODEL_PATH)
@@ -229,20 +295,29 @@ def hotword_listener():
             print(f"Błąd audio: {status}")
         q.put(bytes(indata))
 
-    with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE,
-                           dtype='int16', channels=1, callback=callback):
+    with sd.RawInputStream(
+        samplerate=SAMPLE_RATE,
+        blocksize=BLOCK_SIZE,
+        dtype='int16',
+        channels=1,
+        callback=callback
+    ):
         while True:
             try:
                 data = q.get(timeout=0.1)
             except queue.Empty:
                 continue
+
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 text = result.get("text", "").lower()
-                if "lustro" in text:
-                    print("🪞 Wykryto 'lustro'!")
+
+                hotword, target = detect_hotword_target(text)
+                if target:
+                    print(f"🪞 Wykryto hotword '{hotword}' -> {target}")
                     with hotword_lock:
                         hotword_detected = True
+                        hotword_target = target
                     break
 
 def _gesture_queue_consumer():
@@ -317,24 +392,46 @@ def stop_gesture_recognition():
 
 
 def asystent_glosowy():
-    global last_stt_text
+    global last_stt_text, gestures_enabled
+
     print("🎤 Rozpoczynam rozpoznawanie mowy (hotword wykryty)...")
 
-    tekst = rozpoznaj_mowe()
-    if not tekst.strip():
-        print("❌ Nie rozpoznano żadnego tekstu.")
-        last_stt_text = ""
-        return "[Brak rozpoznanego tekstu]", "..."
+    was_gestures_enabled = gestures_enabled
+    if was_gestures_enabled:
+        stop_gesture_recognition()
+        time.sleep(0.2)
+    try:
+        tekst = rozpoznaj_mowe()
+        if not tekst.strip():
+            print("❌ Nie rozpoznano żadnego tekstu.")
+            last_stt_text = ""
+            return "[Brak rozpoznanego tekstu]", "..."
 
-    print(f"✅ Rozpoznano pełne zdanie: {tekst}")
-    last_stt_text = tekst
+        print(f"✅ Rozpoznano pełne zdanie: {tekst}")
+        last_stt_text = tekst
 
-    odpowiedz = zapytaj_openrouter(tekst)
-    print(f"🧠 Odpowiedź AI: {odpowiedz}")
+        odpowiedz = zapytaj_openrouter(tekst)
+        print(f"🧠 Odpowiedź AI: {odpowiedz}")
 
-    mow_tekstem(odpowiedz)
-    return tekst, odpowiedz
+        return tekst, odpowiedz
+    finally:
+        if was_gestures_enabled:
+            start_gesture_recognition()
 
+@app.post("/api/asystent_tts")
+def api_asystent_tts():
+    data = request.get_json(force=True, silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "empty"}), 400
+
+    threading.Thread(
+        target=mow_tekstem,
+        args=(text,),
+        daemon=True
+    ).start()
+
+    return jsonify({"ok": True})
 @app.route('/')
 def index():
     t0 = _t()
@@ -347,7 +444,8 @@ def index():
             recognized_user_id = CURRENT_USER_ID
             # w trybie wymuszonym nie startujemy kamery
         else:
-            # Tryb normalny: start rozpoznawania (NIE czyści recognized_user_id)
+            recognized_user_id = None
+            # Tryb normalny: start rozpoznawania (czyści recognized_user_id)
             start_face_recognition()
     _log_step("index: start_face_recognition + globals", t0)
 
@@ -459,23 +557,52 @@ def index_user():
         gmail_unread, gmail_preview = None, []
         _log_step("user: emails", t4)
 
+    pillsner_message = None
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+
+    with pillsner_logs_lock:
+        today_pillsner_count = sum(
+            1 for item in pillsner_logs
+            if item.get("user_id") == current_user.user_id
+            and str(item.get("received_at", "")).startswith(today_str)
+        )
+
+    if today_pillsner_count == 0:
+        pillsner_message = "Weź poranną dawkę leków"
+    elif today_pillsner_count == 1:
+        pillsner_message = "Weź popołudniową dawkę leków"
+    elif today_pillsner_count == 2:
+        pillsner_message = "Weź wieczorną dawkę leków"
+
     _log_step("user: TOTAL do render_template", t0)
-    return render_template("index_user.html",
+    template_name = "index_user.html" if current_user.user_id == 1 else "index_user2.html"
+
+    return render_template(template_name,
                            time=time_str, date=date_str,
                            weather=weather, forecast=forecast,
                            temperatura=temperatura, wilgotnosc=wilgotnosc,
                            today_events=today_events, future_events=future_events,
                            tasks=tasks, user=current_user,
-                           gmail_unread=gmail_unread, gmail_preview=gmail_preview)
+                           gmail_unread=gmail_unread, gmail_preview=gmail_preview,
+                           pillsner_message=pillsner_message)
 
 @app.route('/check_hotword')
 def check_hotword():
-    global hotword_detected
+    global hotword_detected, hotword_target
+
     with hotword_lock:
         if hotword_detected:
+            target = hotword_target
             hotword_detected = False
-            return jsonify({"detected": True})
-    return jsonify({"detected": False})
+            hotword_target = None
+            return jsonify({
+                "detected": True,
+                "target": target
+            })
+    return jsonify({
+        "detected": False,
+        "target": None
+    })
 
 @app.route("/api/asystent_start")
 def api_asystent_start():
@@ -566,7 +693,53 @@ def user_email():
 
     return render_template("email.html", user=current_user, emails=emails, error=error)
 
+@app.post("/api/pillsner_log")
+def api_pillsner_log():
+    data = request.get_json(force=True, silent=True) or {}
+
+    device = (data.get("device") or "unknown_device").strip()
+    event = (data.get("event") or "unknown_event").strip()
+    extra = (data.get("extra") or "").strip()
+
+    user_id = PILLSNER_DEVICE_TO_USER.get(device)
+    if user_id is None:
+        return jsonify({
+            "ok": False,
+            "error": f"Nieznane urządzenie pillsner: {device}"
+        }), 400
+
+    now = datetime.datetime.now()
+    entry = {
+        "received_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "device": device,
+        "user_id": user_id,
+        "event": event,
+        "extra": extra
+    }
+
+    with pillsner_logs_lock:
+        pillsner_logs.appendleft(entry)
+        save_pillsner_logs()
+
+    print(f"[PILLSNER] Odebrano: {entry}")
+
+    return jsonify({
+        "ok": True,
+        "message": "Log pillsner zapisany",
+        "entry": entry
+    }), 200
+
+@app.route("/user/pillsner")
+def user_pillsner():
+    with pillsner_logs_lock:
+        logs = list(pillsner_logs)
+
+    return render_template("pillsner.html", logs=logs)
 
 if __name__ == "__main__":
+    load_pillsner_logs()
+    # Wyłączam logi typu GET, POST
+    log = logging.getLogger("werkzeug")
+    log.setLevel(logging.ERROR)
     # SSE potrzebuje wielowątkowości na dev-serwerze
     app.run(host="0.0.0.0", debug=False, use_reloader=False, threaded=True)

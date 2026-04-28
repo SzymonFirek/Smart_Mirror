@@ -36,7 +36,7 @@ def save_face_data(user_name, image_path, encoding):
     else:
         print(f"Plik {image_path} już znajduje się w docelowym folderze, kopiowanie pominięte.")
 
-def load_known_encodings(base_dir="known_faces"):
+def load_known_encodings(base_dir="Dane_users/known_faces"):
     """
     Wczytuje wszystkie encodings z podfolderów base_dir.
     Zwraca dict: {user_name: encoding}
@@ -64,7 +64,7 @@ class FaceRecognitionModule:
     - stop_recognition() prawidłowo uwalnia zasoby.
     """
 
-    def __init__(self, known_users, base_dir="known_faces", camera_index=0, backend=None):
+    def __init__(self, known_users, base_dir="Dane_users/known_faces", camera_index=0, backend=None):
         """
         known_users: lista MirrorUser (z user_id i name)
         Ładuje encodings z dysku i tworzy listę do rozpoznawania.
@@ -200,12 +200,17 @@ class FaceRecognitionModule:
           - running zostanie ustawione na False (stop_recognition()).
         """
         t_start = time.time()
+        camera_opened = False
 
         # Otwórz kamerę; jeśli się nie uda, próbuj aż running=False lub minie timeout
         while self.running and (time.time() - t_start) < self.RECOGNITION_TIMEOUT:
             if self._open_camera():
+                camera_opened = True
                 break
             time.sleep(0.2)
+
+        if not camera_opened:
+            return
 
         print("🔍 Rozpoczynam rozpoznawanie twarzy...")
 

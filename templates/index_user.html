@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Smart Mirror</title>
+    <title>Smart Mirror - Szymon</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="/static/gesture_focus.js" defer></script>
 </head>
@@ -10,10 +10,11 @@
     <div class="rotate-90">
     <div class="container">
             <div class="toolbar">
-                <a data-gfocus data-genter="link" href="/">⬅ Wstecz</a>
-                <a data-gfocus data-genter="link" href="/user/asystent_chat">🎤 Asystent</a>
-                <a data-gfocus data-genter="link" href="/user/email">📧 Email</a>
-                <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież</button>
+                <a data-gfocus data-genter="link" href="/"><- Wstecz </a>
+                <a data-gfocus data-genter="link" href="/user/asystent_chat"> Asystent </a>
+                <a data-gfocus data-genter="link" href="/user/email"> Email </a>
+                <a data-gfocus data-genter="link" href="/user/pillsner"> Leki </a>
+                <button data-gfocus data-genter="js:location.reload()">⟳ Odśwież </button>
             </div>
 
             <h1>{{ time }}</h1>
@@ -24,7 +25,7 @@
                     <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="weather">
                     <div class="main">
                         <div>{{ weather.temp }}°C</div>
-                        <div style="font-size:0.9rem; opacity:0.85;">{{ weather.desc }}</div>
+                        <div style="font-size:1.2rem; opacity:0.85;">{{ weather.desc }}</div>
                     </div>
                 </div>
 
@@ -64,7 +65,7 @@
                                 brak danych
                             </div>
                         {% endif %}
-                        <div style="font-size:0.8rem; opacity:0.7; margin-top:0.4rem;">
+                        <div style="font-size:1rem; opacity:0.7; margin-top:0.4rem;">
                             Gmail
                         </div>
                     </div>
@@ -121,6 +122,13 @@
                     <li>Brak zadań</li>
                 {% endfor %}
             </ul>
+
+            {% if pillsner_message %}
+            <div class="pillsner-reminder">
+                <div class="pillsner-reminder-title">LEKI:</div>
+                <div class="pillsner-reminder-text">{{ pillsner_message }}</div>
+            </div>
+            {% endif %}
     </div>
     </div> <!-- .rotate-90 -->
 
@@ -136,10 +144,9 @@
                 if (data.detected === true) {
                     hotwordDetected = true;
                     clearInterval(hotwordInterval);
-                    window.location.href = '/user/asystent_chat';
+                    window.location.href = data.target || '/user/asystent_chat';
                 }
-            })
-            .catch(err => console.error("Błąd fetch:", err));
+            }).catch(err => console.error("Błąd fetch:", err));
     }, 1000);
 
     // Auto-odświeżanie czujnika iNode (adaptacyjne: szybko do pierwszych danych, potem rzadziej)
@@ -202,30 +209,19 @@
     // Gesty dłoni → symulacja klawiatury
     // =========================
 
+
     function simulateKey(keyName) {
-    console.log("simulateKey:", keyName);
+        console.log("simulateKey:", keyName);
 
-    const eventInit = {
-        key: keyName,
-        code: keyName,
-        bubbles: true
-    };
+        const evt = new KeyboardEvent("keydown", {
+            key: keyName,
+            code: keyName,
+            bubbles: true
+        });
 
-    // tworzymy osobne eventy, żeby każdy miał pełną ścieżkę propagacji
-    const targets = [];
-    if (document) targets.push(document);
-    if (document.body) targets.push(document.body);
-    if (window) targets.push(window);
-
-    targets.forEach(target => {
-        try {
-            const evt = new KeyboardEvent("keydown", eventInit);
-            target.dispatchEvent(evt);
-        } catch (e) {
-            console.error("Błąd dispatchEvent dla", keyName, "na", target, e);
-        }
-    });
+        document.dispatchEvent(evt);
     }
+
 
 
     function handleGesture(gesture) {
